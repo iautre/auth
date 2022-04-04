@@ -7,12 +7,12 @@ import (
 )
 
 type UserService struct {
-	// gowk.Service
+	gowk.Service
 }
 
 func NewUserService(c *gin.Context) *UserService {
 	userService := &UserService{}
-	// userService.Ctx = c
+	userService.Ctx = c
 	return userService
 }
 
@@ -53,6 +53,7 @@ func (us *UserService) GetByPhone(phone string) (*model.User, error) {
 	user := &model.User{}
 	err := user.GetByPhone(phone)
 	if err != nil {
+		gowk.Log().Error(us.Ctx, err.Error(), err)
 		user.Phone = phone
 		user.Auid = gowk.NewAuid()
 	}
