@@ -9,17 +9,24 @@ import (
 )
 
 type AppService struct {
-	gowk.Service
 }
 
-func NewAppService(c *gin.Context) *AppService {
+func NewAppService() *AppService {
 	appService := &AppService{}
-	appService.Ctx = c
 	return appService
 }
 
 func (as *AppService) CheckApp(c *gin.Context) (*model.App, error) {
 	appKey := c.Request.Header.Get("App")
+	//校验app
+	c.Set("APPKEY", appKey)
+	return as.CheckAppByKey(appKey)
+}
+
+func (as *AppService) CheckAppByKey(appKey string) (*model.App, error) {
+	if appKey == "" {
+		return nil, errors.New("无效appkey")
+	}
 	//校验app
 	app := &model.App{}
 	if err := app.GetByKey(appKey); err != nil {
@@ -32,15 +39,12 @@ func (as *AppService) CheckPolicy(c *gin.Context, app *model.App) error {
 	return nil
 }
 
-func (as *AppService) Add(name string) (*model.App, error) {
-	post := &model.App{
-		Name:   name,
-		Key:    gowk.UUID(),
-		Secret: gowk.UUID64(),
-	}
+func (as *AppService) Add(post *model.App) (*model.App, error) {
+	post.Key = gowk.UUID()
+	post.Secret = gowk.UUID64()
 	//检测名字有吗
 	app := &model.App{}
-	if err := app.GetByName(name); err != nil {
+	if err := app.GetByName(post.Name); err == nil {
 		return nil, errors.New("已有")
 	}
 	if err := post.Save(); err != nil {

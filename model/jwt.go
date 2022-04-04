@@ -16,7 +16,7 @@ type Jwt struct {
 type Claims struct {
 	jwt.StandardClaims
 	ID       string
-	Auid     uint
+	Auid     string
 	Role     []string
 	Username string
 }

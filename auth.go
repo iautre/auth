@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/autrec/auth/model"
 	"github.com/autrec/auth/service"
@@ -10,15 +11,26 @@ import (
 )
 
 // 认证
-func AuthenticateMiddleware(ignore ...string) gin.HandlerFunc {
+func AuthenticateMiddleware(ignores ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		for _, url := range ignore {
-			if c.Request.URL.Path == url {
-				c.Next()
-				return
+		for _, ignore := range ignores {
+			arr := strings.Split(ignore, ":")
+			if len(arr) == 2 {
+				method := strings.ToUpper(arr[0])
+				url := arr[1]
+				if c.Request.Method == method && c.Request.URL.Path == url {
+					c.Next()
+					return
+				}
+			}
+			if len(arr) == 1 {
+				if c.Request.URL.Path == arr[0] {
+					c.Next()
+					return
+				}
 			}
 		}
-		appService := service.NewAppService(c)
+		appService := service.NewAppService()
 		//校验client
 		app, err := appService.CheckApp(c)
 		if err != nil {
@@ -53,9 +65,9 @@ func NewAuthController() *AuthController {
 func (auth *AuthController) InitRouter(routerGroup *gin.RouterGroup) {
 	//获取token
 	routerGroup.GET("/token", auth.GetToken)
-	routerGroup.GET("/token/qrcode", auth.GetQrcode)
-	routerGroup.GET("/token/smscode", auth.SendSmsCode)
-	routerGroup.POST("/token/confirm_access", auth.ConfirmAccess)
+	routerGroup.GET("/qrcode", auth.GetQrcode)
+	routerGroup.GET("/smscode", auth.SendSmsCode)
+	routerGroup.POST("/confirm_access", auth.ConfirmAccess)
 }
 
 //获取token
@@ -154,11 +166,21 @@ func (c *AppController) Add(ctx *gin.Context) {
 		gowk.Response().Fail(ctx, gowk.ERR, errors.New("请输入应用名"))
 		return
 	}
-	service := service.NewAppService(ctx)
-	res, err := service.Add(m.Name)
+	service := service.NewAppService()
+	res, err := service.Add(m)
 	if err != nil {
 		gowk.Response().Fail(ctx, gowk.ERR, err)
 		return
 	}
 	gowk.Response().Success(ctx, res)
+}
+
+func GetClaims(token string) (*model.Claims, error) {
+	jwtS := service.NewJwtService()
+	return jwtS.CheckToken(token)
+}
+
+func CheckApp(appKey string) (*model.App, error) {
+	appS := service.NewAppService()
+	return appS.CheckAppByKey(appKey)
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"github.com/autrec/auth/model"
+	"github.com/autrec/gowk"
 	"github.com/gin-gonic/gin"
 )
 
@@ -51,7 +52,12 @@ func (us *UserService) GetByEmail(email string) (*model.User, error) {
 func (us *UserService) GetByPhone(phone string) (*model.User, error) {
 	user := &model.User{}
 	err := user.GetByPhone(phone)
-	return user, err
+	if err != nil {
+		user.Phone = phone
+		user.Auid = gowk.NewAuid()
+	}
+	user.Save()
+	return user, nil
 }
 
 type UserThridService struct {

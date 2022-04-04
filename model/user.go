@@ -11,7 +11,7 @@ import (
 
 type User struct {
 	ID       primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	Auid     uint               `json:"auid" bson:"auid,omitempty"`
+	Auid     string             `json:"auid" bson:"auid,omitempty"`
 	NickName string             `json:"nickName" bson:"nickName,omitempty"`
 	Email    string             `json:"email" bson:"email,omitempty"`
 	Phone    string             `json:"phone" bson:"phone,omitempty"`
