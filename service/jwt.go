@@ -1,9 +1,8 @@
 package service
 
 import (
-	"errors"
-
 	"github.com/autrec/auth/model"
+	"github.com/autrec/gowk"
 )
 
 type JwtService struct {
@@ -13,7 +12,7 @@ func NewJwtService() *JwtService {
 	return &JwtService{}
 }
 
-func (js *JwtService) CreateToken(user *model.User) (string, error) {
+func (js *JwtService) CreateToken(user *model.User) string {
 
 	jm := model.NewJWT()
 	//创建token
@@ -22,16 +21,16 @@ func (js *JwtService) CreateToken(user *model.User) (string, error) {
 		Auid: user.Auid,
 	})
 	if err != nil {
-		return "", err
+		gowk.Panic(gowk.ERR_TOKEN)
 	}
-	return token, nil
+	return token
 }
 
-func (js *JwtService) CheckToken(token string) (*model.Claims, error) {
+func (js *JwtService) CheckToken(token string) *model.Claims {
 	// 通过http header中的token解析来认证
 
 	if token == "" {
-		return nil, errors.New("请求未携带token，无权限访问")
+		gowk.Panic(gowk.NewErrorCode(11, "请求未携带token，无权限访问"))
 	}
 
 	// 初始化一个JWT对象实例，并根据结构体方法来解析token
@@ -41,9 +40,9 @@ func (js *JwtService) CheckToken(token string) (*model.Claims, error) {
 
 	if err != nil {
 		// token过期
-		return nil, errors.New("认证失败")
+		gowk.Panic(gowk.NewErrorCode(11, "认证失败"))
 	}
 
 	// 将解析后的有效载荷claims重新写入gin.Context引用对象中
-	return claims, nil
+	return claims
 }

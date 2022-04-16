@@ -16,15 +16,13 @@ func NewUserService(c *gin.Context) *UserService {
 	return userService
 }
 
-func (us *UserService) GetByWeApp(code string) (*model.User, error) {
+func (us *UserService) GetByWeApp(code string) *model.User {
 	weapp := NewWeapp()
-	openId, sessionKey, err := weapp.Code2Session(code)
-	if err != nil {
-		return nil, err
-	}
+	openId, sessionKey := weapp.Code2Session(code)
+
 	user := &model.User{}
 	//查询用户信息
-	err = user.GetByThridOpenId(openId)
+	err := user.GetByThridOpenId(openId)
 	if err != nil {
 		user.Thrids = make([]*model.UserThrid, 0)
 		userThrid := &model.UserThrid{
@@ -36,20 +34,26 @@ func (us *UserService) GetByWeApp(code string) (*model.User, error) {
 		user.Thrids = append(user.Thrids, userThrid)
 	}
 	user.Save()
-	return user, nil
+	return user
 }
 
-func (us *UserService) GetByAuid(auid uint) (*model.User, error) {
+func (us *UserService) GetByAuid(auid uint) *model.User {
 	user := &model.User{}
 	err := user.GetByAuid(auid)
-	return user, err
+	if err != nil {
+		gowk.Panic(gowk.NewErrorCode(500, "获取用户失败"))
+	}
+	return user
 }
-func (us *UserService) GetByEmail(email string) (*model.User, error) {
+func (us *UserService) GetByEmail(email string) *model.User {
 	user := &model.User{}
 	err := user.GetByEmail(email)
-	return user, err
+	if err != nil {
+		gowk.Panic(gowk.NewErrorCode(500, "获取用户失败"))
+	}
+	return user
 }
-func (us *UserService) GetByPhone(phone string) (*model.User, error) {
+func (us *UserService) GetByPhone(phone string) *model.User {
 	user := &model.User{}
 	err := user.GetByPhone(phone)
 	if err != nil {
@@ -58,7 +62,7 @@ func (us *UserService) GetByPhone(phone string) (*model.User, error) {
 		user.Auid = gowk.NewAuid()
 	}
 	user.Save()
-	return user, nil
+	return user
 }
 
 type UserThridService struct {

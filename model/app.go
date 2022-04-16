@@ -26,7 +26,7 @@ func (App) DBName() string {
 }
 
 func (a *App) Collection() *mongo.Collection {
-	return gowk.Mongo().Database(a.DBName()).Collection(a.TableName())
+	return gowk.DB[*mongo.Client]().Database(a.DBName()).Collection(a.TableName())
 }
 func (a *App) Save() error {
 	_, err := a.Collection().InsertOne(context.TODO(), a)

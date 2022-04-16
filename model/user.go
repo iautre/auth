@@ -10,16 +10,16 @@ import (
 )
 
 type User struct {
-	ID       primitive.ObjectID `json:"id" bson:"_id,omitempty"`
-	Auid     string             `json:"auid" bson:"auid,omitempty"`
-	NickName string             `json:"nickName" bson:"nickName,omitempty"`
-	Email    string             `json:"email" bson:"email,omitempty"`
-	Phone    string             `json:"phone" bson:"phone,omitempty"`
-	Password string             `json:"password" bson:"password,omitempty"`
-	Avatar   string             `json:"avatar" bson:"avatar,omitempty"`
-	Thrids   []*UserThrid       `bson:"thrids,omitempty"`
-	Roles    []*Role            `bson:"sroles,omitempty"`
-	Policies []*Policy          `bson:"policies,omitempty"`
+	ID       primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
+	Auid     string             `json:"auid,omitempty" bson:"auid,omitempty"`
+	NickName string             `json:"nickName,omitempty" bson:"nickName,omitempty"`
+	Email    string             `json:"email,omitempty" bson:"email,omitempty"`
+	Phone    string             `json:"phone,omitempty" bson:"phone,omitempty"`
+	Password string             `json:"password,omitempty" bson:"password,omitempty"`
+	Avatar   string             `json:"avatar,omitempty" bson:"avatar,omitempty"`
+	Thrids   []*UserThrid       `json:"thrids,omitempty" bson:"thrids,omitempty"`
+	Roles    []*Role            `json:"roles,omitempty" bson:"sroles,omitempty"`
+	Policies []*Policy          `json:"policies,omitempty" bson:"policies,omitempty"`
 }
 
 func (User) TableName() string {
@@ -50,7 +50,7 @@ func (UserThrid) DBName() string {
 	return "autre_auth"
 }
 func (u *User) Collection() *mongo.Collection {
-	return gowk.Mongo().Database(u.DBName()).Collection(u.TableName())
+	return gowk.DB[*mongo.Client]().Database(u.DBName()).Collection(u.TableName())
 }
 func (u *User) Save() error {
 	iResult, err := u.Collection().InsertOne(context.TODO(), u)

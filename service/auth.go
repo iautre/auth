@@ -1,8 +1,6 @@
 package service
 
 import (
-	"errors"
-
 	"github.com/autrec/auth/model"
 	"github.com/autrec/gowk"
 	"github.com/gin-gonic/gin"
@@ -20,27 +18,21 @@ func NewAuthService(c *gin.Context) *AuthService {
 	return &AuthService{UID: userId, Auid: auid}
 }
 
-func (as *AuthService) Authenticate(c *gin.Context) error {
+func (as *AuthService) Authenticate(c *gin.Context) {
 	token := c.Request.Header.Get("Authorization")
 	//校验token
 	js := NewJwtService()
-	claims, err := js.CheckToken(token)
-	if err != nil {
-		return err
-	}
+	claims := js.CheckToken(token)
 	c.Set("UID", claims.ID)
 	c.Set("AUID", claims.Auid)
-	return nil
 }
 
-func (as *AuthService) GetQrcode(qrcodeType string) (*model.Qrcode, error) {
+func (as *AuthService) GetQrcode(qrcodeType string) *model.Qrcode {
 	if "weapp" == qrcodeType {
 		weapp := NewWeapp()
 		uuid := gowk.UUID()
-		fileByte, err := weapp.GetUnlimited(uuid)
-		if err != nil {
-			return nil, err
-		}
+		fileByte := weapp.GetUnlimited(uuid)
+
 		//存缓存
 		gowk.Cache().Set(uuid, &model.ConfirmAccess{
 			Token:      uuid,
@@ -49,76 +41,56 @@ func (as *AuthService) GetQrcode(qrcodeType string) (*model.Qrcode, error) {
 		return &model.Qrcode{
 			Data: fileByte,
 			Code: uuid,
-		}, nil
+		}
 	}
-	return nil, nil
+	return nil
 }
 
-func (as *AuthService) GetToken(c *gin.Context) {
+func (as *AuthService) GetToken(c *gin.Context) *model.Token {
 	grantType := c.Query("grant_type")
 	code := c.Query("code")
 	var user *model.User
-	var err error
 	userService := NewUserService(c)
 	if "weapp" == grantType {
-
 		if code == "" {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, nil)
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "无code"))
 		}
 		//通过微信code获取用户
-		user, err = userService.GetByWeApp(code)
-		if err != nil {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, nil)
-			return
-		}
+		user = userService.GetByWeApp(code)
 	} else if "phone" == grantType {
 		phone := c.Query("phone")
 		//校验code
 		if code != "789654" {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, errors.New("验证码错误"))
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "验证码错误"))
 		}
-		user, err = userService.GetByPhone(phone)
-		if err != nil {
-			gowk.Response().Fail(c, gowk.ERR_NODATA, nil)
-			return
-		}
+		user = userService.GetByPhone(phone)
 	} else if "weappscan" == grantType {
 		//获取扫码结果
 		confirmAccess := gowk.Cache().Get(code).(*model.ConfirmAccess)
 		if confirmAccess == nil {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, errors.New("登陆二维码失效，请重新获取"))
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "登陆二维码失效，请重新获取"))
 		}
 		if "" == confirmAccess.State {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, errors.New("等待扫码"))
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "等待扫码"))
+
 		}
 		if "scaned" == confirmAccess.State {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, errors.New("已扫码，等待确认"))
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "已扫码，等待确认"))
+
 		}
 		if "deny" == confirmAccess.State { //不同意
-			gowk.Response().Fail(c, gowk.ERR_DBERR, errors.New("拒绝登陆"))
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "拒绝登陆"))
+
 		}
 		if "approve" == confirmAccess.State { //同意
 			gowk.Cache().Del(code)
-			user, err = userService.GetByAuid(confirmAccess.Auid)
-			if err != nil {
-				gowk.Response().Fail(c, gowk.ERR_DBERR, nil)
-				return
-			}
+			user = userService.GetByAuid(confirmAccess.Auid)
 		}
 	} else if "basicauth" == grantType { //用户名密码
 		username := c.Query("username")
 		password := c.Query("password")
-		user, err = userService.GetByPhone(username)
-		if err != nil {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, err)
-			return
-		}
+		user = userService.GetByPhone(username)
+
 		//hash, err2 := bcrypt.GenerateFromPassword([]byte("4120edd84e61a11ecd1f902dfdd88eac"), bcrypt.DefaultCost) //加密处理
 		//if err2 != nil {
 		//	return nil, common.NewError("密码错误")
@@ -126,32 +98,30 @@ func (as *AuthService) GetToken(c *gin.Context) {
 		//encodePWD := string(hash)                                                     // 保存在数据库的密码，虽然每次生成都不同，只需保存一份即可
 		err2 := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) //验证（对比）
 		if err2 != nil {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, errors.New("密码错误"))
-			return
+			gowk.Panic(gowk.NewErrorCode(500, "密码错误"))
 		}
 	} else {
-		gowk.Response().Fail(c, gowk.ERR_DBERR, nil)
-		return
+		gowk.Panic(gowk.NewErrorCode(500, "无效"))
 	}
 	js := NewJwtService()
-	token, err := js.CreateToken(user)
-	response := make(map[string]interface{})
-	response["token"] = token
-	response["userInfo"] = user
-	gowk.Response().Success(c, response)
+	tokenStr := js.CreateToken(user)
+	return &model.Token{
+		Token:    tokenStr,
+		UserInfo: user,
+	}
 }
 
-func (as *AuthService) ConfirmAccess(c *gin.Context, accessToken, confirmType string) {
+func (as *AuthService) ConfirmAccess(c *gin.Context, accessToken, confirmType string) *model.ConfirmAccess {
 	confirmAccess := gowk.Cache().Get(accessToken).(*model.ConfirmAccess)
 	if confirmAccess == nil {
-		gowk.Response().Fail(c, gowk.ERR, errors.New("登陆二维码失效，请重新获取"))
-		return
+		gowk.Panic(gowk.NewErrorCode(500, "登陆二维码失效，请重新获取"))
+
 	}
 	confirmAccess.Auid = as.Auid
 	confirmAccess.State = confirmType
 	if "scaned" == confirmType || "sended" == confirmType {
-		gowk.Response().Success(c, confirmAccess)
-		return
+		return confirmAccess
 	}
-	gowk.Response().Fail(c, gowk.ERR, errors.New("类型错误"))
+	gowk.Panic(gowk.NewErrorCode(500, "类型错误"))
+	return nil
 }

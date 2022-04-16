@@ -32,20 +32,11 @@ func AuthenticateMiddleware(ignores ...string) gin.HandlerFunc {
 		}
 		appService := service.NewAppService()
 		//校验client
-		app, err := appService.CheckApp(c)
-		if err != nil {
-			gowk.Response().Fail(c, gowk.ERR_NOAPP, err)
-			return
-		}
+		app := appService.CheckApp(c)
 		//校验权限
-		if appService.CheckPolicy(c, app) != nil {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, err)
-			return
-		}
-		if service.NewAuthService(c).Authenticate(c) != nil {
-			gowk.Response().Fail(c, gowk.ERR_DBERR, err)
-			return
-		}
+		appService.CheckPolicy(c, app)
+		//校验token
+		service.NewAuthService(c).Authenticate(c)
 		c.Next()
 	}
 }
@@ -74,7 +65,8 @@ func (auth *AuthController) InitRouter(routerGroup *gin.RouterGroup) {
 // GET: /token?grant_type=&code=
 func (auth *AuthController) GetToken(c *gin.Context) {
 	js := service.NewAuthService(c)
-	js.GetToken(c)
+	token := js.GetToken(c)
+	gowk.Response().Success(c, token)
 }
 
 //获取二维码
@@ -86,10 +78,7 @@ func (auth *AuthController) GetQrcode(c *gin.Context) {
 		return
 	}
 	s := service.NewAuthService(c)
-	q, err := s.GetQrcode(qrcodeType)
-	if err != nil {
-		gowk.Response().Fail(c, gowk.ERR, err)
-	}
+	q := s.GetQrcode(qrcodeType)
 	gowk.Response().Success(c, q)
 }
 
@@ -167,20 +156,16 @@ func (c *AppController) Add(ctx *gin.Context) {
 		return
 	}
 	service := service.NewAppService()
-	res, err := service.Add(m)
-	if err != nil {
-		gowk.Response().Fail(ctx, gowk.ERR, err)
-		return
-	}
+	res := service.Add(m)
 	gowk.Response().Success(ctx, res)
 }
 
-func GetClaims(token string) (*model.Claims, error) {
+func GetClaims(token string) *model.Claims {
 	jwtS := service.NewJwtService()
 	return jwtS.CheckToken(token)
 }
 
-func CheckApp(appKey string) (*model.App, error) {
+func CheckApp(appKey string) *model.App {
 	appS := service.NewAppService()
 	return appS.CheckAppByKey(appKey)
 }
