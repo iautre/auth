@@ -1,9 +1,9 @@
 package service
 
 import (
-	"github.com/autrec/auth/model"
-	"github.com/autrec/gowk"
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/model"
+	"github.com/iautre/gowk"
 )
 
 type AppService struct {
@@ -26,26 +26,25 @@ func (as *AppService) CheckAppByKey(appKey string) *model.App {
 		gowk.Panic(gowk.ERR_NOAPP)
 	}
 	//校验app
-	app := &model.App{}
-	if err := app.GetByKey(appKey); err != nil {
+	var app *model.App
+	app, err := app.GetByKey(appKey)
+	if err != nil {
 		gowk.Panic(gowk.ERR_NOAPP)
 	}
 	return app
 }
 func (as *AppService) CheckPolicy(c *gin.Context, app *model.App) {
-
 }
 
-func (as *AppService) Add(post *model.App) *model.App {
-	post.Key = gowk.UUID()
-	post.Secret = gowk.UUID64()
+func (as *AppService) Add(app *model.App) *model.App {
+	app.Key = gowk.UUID()
+	app.Secret = gowk.UUID64()
 	//检测名字有吗
-	app := &model.App{}
-	if err := app.GetByName(post.Name); err == nil {
+	if _, err := app.GetByName(app.Name); err == nil {
 		gowk.Panic(gowk.NewErrorCode(500, "已有"))
 	}
-	if err := post.Save(); err != nil {
+	if err := app.Save(); err != nil {
 		gowk.Panic(gowk.NewErrorCode(500, "保存失败"))
 	}
-	return post
+	return app
 }

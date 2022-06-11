@@ -1,32 +1,26 @@
 package model
 
 import (
-	"context"
-
-	"github.com/autrec/gowk"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/iautre/gowk"
 )
 
 type User struct {
-	ID       primitive.ObjectID `json:"id,omitempty" bson:"_id,omitempty"`
-	Auid     string             `json:"auid,omitempty" bson:"auid,omitempty"`
-	NickName string             `json:"nickName,omitempty" bson:"nickName,omitempty"`
-	Email    string             `json:"email,omitempty" bson:"email,omitempty"`
-	Phone    string             `json:"phone,omitempty" bson:"phone,omitempty"`
-	Password string             `json:"password,omitempty" bson:"password,omitempty"`
-	Avatar   string             `json:"avatar,omitempty" bson:"avatar,omitempty"`
-	Thrids   []*UserThrid       `json:"thrids,omitempty" bson:"thrids,omitempty"`
-	Roles    []*Role            `json:"roles,omitempty" bson:"sroles,omitempty"`
-	Policies []*Policy          `json:"policies,omitempty" bson:"policies,omitempty"`
+	gowk.Model
+	Auid     uint         `json:"auid,omitempty"`
+	NickName string       `json:"nickName,omitempty" `
+	Email    string       `json:"email,omitempty"`
+	Phone    string       `json:"phone,omitempty"`
+	Password string       `json:"password,omitempty"`
+	Avatar   string       `json:"avatar,omitempty"`
+	Thrids   []*UserThrid `json:"thrids,omitempty" gorm:"-"`
+	Roles    []*Role      `json:"roles,omitempty" gorm:"-"`
+	Policies []*Policy    `json:"policies,omitempty" gorm:"-"`
 }
 
-func (User) TableName() string {
-	return "auth_user"
-}
-func (User) DBName() string {
-	return "autre_auth"
+type UserRole struct {
+	gowk.Model
+	UserId uint
+	RoleId uint
 }
 
 func NewUser() *User {
@@ -34,6 +28,7 @@ func NewUser() *User {
 }
 
 type UserThrid struct {
+	gowk.Model
 	UserId      uint   `json:"uerId,omitempty" bson:"uerId,omitempty"`
 	OpenType    string `json:"openType,omitempty" bson:"openType,omitempty"`
 	OpenId      string `json:"openId,omitempty" bson:"openId,omitempty"`
@@ -43,37 +38,38 @@ type UserThrid struct {
 	ExpiresIn   string `json:"expiresIn" bson:"expiresIn,omitempty"`
 }
 
-func (UserThrid) TableName() string {
-	return "auth_user_thrid"
-}
-func (UserThrid) DBName() string {
-	return "autre_auth"
-}
-func (u *User) Collection() *mongo.Collection {
-	return gowk.DB[*mongo.Client]().Database(u.DBName()).Collection(u.TableName())
-}
 func (u *User) Save() error {
-	iResult, err := u.Collection().InsertOne(context.TODO(), u)
-	if err != nil {
+	if err := gowk.DB().Save(u).Error; err != nil {
 		return err
 	}
-	id := iResult.InsertedID.(primitive.ObjectID)
-	u.ID = id
 	return nil
 }
 func (u *User) Update() error {
 
 	return nil
 }
-func (u *User) GetByThridOpenId(openId string) error {
-	return u.Collection().FindOne(context.TODO(), bson.M{"thrids.openId": openId}).Decode(u)
+func (u *User) GetByThridOpenId(openId string) (*User, error) {
+	if err := gowk.DB().Where("open_id = ?", openId).First(u).Error; err != nil {
+		return nil, err
+	}
+	return u, nil
 }
-func (u *User) GetByAuid(auid uint) error {
-	return u.Collection().FindOne(context.TODO(), bson.M{"auid": auid}).Decode(u)
+func (u *User) GetByAuid(auid uint) (*User, error) {
+	if err := gowk.DB().Where("auid = ?", auid).First(u).Error; err != nil {
+		return nil, err
+	}
+	return u, nil
 }
-func (u *User) GetByEmail(email string) error {
-	return u.Collection().FindOne(context.TODO(), bson.M{"email": email}).Decode(u)
+func (u *User) GetByEmail(email string) (*User, error) {
+	if err := gowk.DB().Where("email = ?", email).First(u).Error; err != nil {
+		return nil, err
+	}
+	return u, nil
 }
-func (u *User) GetByPhone(phone string) error {
-	return u.Collection().FindOne(context.TODO(), bson.M{"phone": phone}).Decode(u)
+func (u *User) GetByPhone(phone string) (*User, error) {
+	user := &User{}
+	if err := gowk.DB().Where("phone = ?", phone).First(user).Error; err != nil {
+		return nil, err
+	}
+	return user, nil
 }

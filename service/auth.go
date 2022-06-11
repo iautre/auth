@@ -1,9 +1,9 @@
 package service
 
 import (
-	"github.com/autrec/auth/model"
-	"github.com/autrec/gowk"
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/model"
+	"github.com/iautre/gowk"
 	"golang.org/x/crypto/bcrypt"
 )
 

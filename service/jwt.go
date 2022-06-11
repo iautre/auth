@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/autrec/auth/model"
-	"github.com/autrec/gowk"
+	"github.com/iautre/auth/model"
+	"github.com/iautre/gowk"
 )
 
 type JwtService struct {
@@ -17,7 +17,7 @@ func (js *JwtService) CreateToken(user *model.User) string {
 	jm := model.NewJWT()
 	//创建token
 	token, err := jm.CreateToken(&model.Claims{
-		ID:   user.ID.Hex(),
+		ID:   user.ID,
 		Auid: user.Auid,
 	})
 	if err != nil {

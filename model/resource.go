@@ -1,6 +1,11 @@
 package model
 
+import "github.com/iautre/gowk"
+
 type Resource struct {
-	Path   string
+	gowk.Model
+	appId  uint
 	Method string
+	Api    string
+	Remark string
 }

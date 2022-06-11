@@ -4,10 +4,10 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/autrec/auth/model"
-	"github.com/autrec/auth/service"
-	"github.com/autrec/gowk"
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/model"
+	"github.com/iautre/auth/service"
+	"github.com/iautre/gowk"
 )
 
 // 认证
@@ -41,6 +41,12 @@ func AuthenticateMiddleware(ignores ...string) gin.HandlerFunc {
 	}
 }
 
+// get:/token
+// get:/qrcode
+// get:/smscode
+// post:/confirm_access
+// post:/app
+// post:/user
 func Routers(routerGroup *gin.RouterGroup) {
 	NewAuthController().InitRouter(routerGroup)
 	NewAppController().InitRouter(routerGroup.Group("/app"))

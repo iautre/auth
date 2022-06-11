@@ -1,8 +1,13 @@
 package model
 
-// type read write
+import "github.com/iautre/gowk"
+
 type Policy struct {
-	Type      string      `json:"type"`
-	Apps      []*App      `json:"apps"`
-	Resources []*Resource `json:"resources"`
+	gowk.Model
+	Name       string
+	Remark     string
+	AppId      uint
+	ResourceId uint
+	Apps       []*App      `json:"apps" gorm:"-"`
+	Resources  []*Resource `json:"resources" gorm:"-"`
 }

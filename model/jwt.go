@@ -4,8 +4,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/autrec/gowk"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/iautre/gowk"
 )
 
 type Jwt struct {
@@ -15,8 +15,8 @@ type Jwt struct {
 
 type Claims struct {
 	jwt.StandardClaims
-	ID       string
-	Auid     string
+	ID       uint
+	Auid     uint
 	Role     []string
 	Username string
 }

@@ -1,9 +1,8 @@
-module github.com/autrec/auth
+module github.com/iautre/auth
 
 go 1.18
 
 require (
-	github.com/autrec/gowk v0.0.0-20220416100642-3c670d1e8b6e
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-gonic/gin v1.7.7
 	go.mongodb.org/mongo-driver v1.9.0
@@ -22,6 +21,7 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
+	github.com/iautre/gowk v0.0.0-20220611143237-50cb04188fbc // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

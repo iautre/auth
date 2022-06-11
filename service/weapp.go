@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/autrec/auth/model"
-	"github.com/autrec/gowk"
+	"github.com/iautre/auth/model"
+	"github.com/iautre/gowk"
 )
 
 const (

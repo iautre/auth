@@ -1,50 +1,44 @@
 package model
 
 import (
-	"context"
-
-	"github.com/autrec/gowk"
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	"github.com/iautre/gowk"
 )
 
 type App struct {
-	Name      string      `json:"name" bson:"name,omitempty"`
-	Remark    string      `json:"remark" bson:"remark,omitempty"`
-	Key       string      `json:"key" bson:"key,omitempty"`
-	Secret    string      `json:"secret" bson:"secret,omitempty"`
-	Resources []*Resource `json:"resources" bson:"resources,omitempty"`
-	Roles     []*Role     `json:"roles" bson:"roles,omitempty"`
-	Policies  []*Policy   `json:"policies" bson:"policies,omitempty"`
+	gowk.Model
+	Name      string      `json:"name"`
+	Remark    string      `json:"remark"`
+	Key       string      `json:"key"`
+	Secret    string      `json:"secret"`
+	Resources []*Resource `json:"resources" gorm:"-"`
+	Policies  []*Policy   `json:"policies" gorm:"-"`
 }
 
-func (App) TableName() string {
-	return "auth_app"
-}
-func (App) DBName() string {
-	return "autre_auth"
+type AppPolicy struct {
+	gowk.Model
+	AppId    uint
+	PolicyId uint
 }
 
-func (a *App) Collection() *mongo.Collection {
-	return gowk.DB[*mongo.Client]().Database(a.DBName()).Collection(a.TableName())
-}
 func (a *App) Save() error {
-	_, err := a.Collection().InsertOne(context.TODO(), a)
-	if err != nil {
-		return err
-	}
-	return nil
+	return gowk.DB().Save(a).Error
 }
 func (u *App) Update() error {
-
+	// gowk.Mysql().Update()
 	return nil
 }
 
-func (a *App) GetByName(name string) error {
-	return a.Collection().FindOne(context.TODO(), bson.M{"name": name}).Decode(a)
-
+func (a *App) GetByName(name string) (*App, error) {
+	app := &App{}
+	if err := gowk.DB().Where("name = ?", name).First(app).Error; err != nil {
+		return nil, err
+	}
+	return app, nil
 }
-func (a *App) GetByKey(key string) error {
-	return a.Collection().FindOne(context.TODO(), bson.M{"key": key}).Decode(a)
-
+func (a *App) GetByKey(key string) (*App, error) {
+	app := &App{}
+	if err := gowk.DB().First(app).Where("key = ?", key).Error; err != nil {
+		return nil, err
+	}
+	return app, nil
 }

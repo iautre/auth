@@ -1,18 +1,19 @@
 package service
 
 import (
-	"github.com/autrec/auth/model"
-	"github.com/autrec/gowk"
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/model"
+	"github.com/iautre/gowk"
 )
 
 type UserService struct {
-	gowk.Service
+	Ctx *gin.Context
 }
 
 func NewUserService(c *gin.Context) *UserService {
-	userService := &UserService{}
-	userService.Ctx = c
+	userService := &UserService{
+		Ctx: c,
+	}
 	return userService
 }
 
@@ -20,9 +21,9 @@ func (us *UserService) GetByWeApp(code string) *model.User {
 	weapp := NewWeapp()
 	openId, sessionKey := weapp.Code2Session(code)
 
-	user := &model.User{}
+	var user *model.User
 	//查询用户信息
-	err := user.GetByThridOpenId(openId)
+	user, err := user.GetByThridOpenId(openId)
 	if err != nil {
 		user.Thrids = make([]*model.UserThrid, 0)
 		userThrid := &model.UserThrid{
@@ -38,30 +39,33 @@ func (us *UserService) GetByWeApp(code string) *model.User {
 }
 
 func (us *UserService) GetByAuid(auid uint) *model.User {
-	user := &model.User{}
-	err := user.GetByAuid(auid)
+	var user *model.User
+	user, err := user.GetByAuid(auid)
 	if err != nil {
-		gowk.Panic(gowk.NewErrorCode(500, "获取用户失败"))
+		gowk.Panic(gowk.NewErrorCode(500, "获取用户失败"), err)
 	}
 	return user
 }
 func (us *UserService) GetByEmail(email string) *model.User {
-	user := &model.User{}
-	err := user.GetByEmail(email)
+	var user *model.User
+	user, err := user.GetByEmail(email)
 	if err != nil {
-		gowk.Panic(gowk.NewErrorCode(500, "获取用户失败"))
+		gowk.Panic(gowk.NewErrorCode(500, "获取用户失败"), err)
 	}
 	return user
 }
 func (us *UserService) GetByPhone(phone string) *model.User {
-	user := &model.User{}
-	err := user.GetByPhone(phone)
+	var user *model.User
+	user, err := user.GetByPhone(phone)
 	if err != nil {
 		gowk.Log().Error(us.Ctx, err.Error(), err)
+		user = &model.User{}
 		user.Phone = phone
 		user.Auid = gowk.NewAuid()
 	}
-	user.Save()
+	if err := user.Save(); err != nil {
+		gowk.Panic(gowk.NewErrorCode(500, "保存用户失败"), err)
+	}
 	return user
 }
 
