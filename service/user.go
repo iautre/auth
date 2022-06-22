@@ -61,7 +61,7 @@ func (us *UserService) GetByPhone(phone string) *model.User {
 		gowk.Log().Error(us.Ctx, err.Error(), err)
 		user = &model.User{}
 		user.Phone = phone
-		user.Auid = gowk.NewAuid()
+		user.Auid = user.NewAuid()
 	}
 	if err := user.Save(); err != nil {
 		gowk.Panic(gowk.NewErrorCode(500, "保存用户失败"), err)

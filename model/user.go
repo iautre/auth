@@ -38,6 +38,11 @@ type UserThrid struct {
 	ExpiresIn   string `json:"expiresIn" bson:"expiresIn,omitempty"`
 }
 
+func (u *User) NewAuid() uint {
+	id := gowk.SonyflakeID()
+	return uint(id)
+}
+
 func (u *User) Save() error {
 	if err := gowk.DB().Save(u).Error; err != nil {
 		return err
