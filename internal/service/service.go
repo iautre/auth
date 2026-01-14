@@ -123,7 +123,7 @@ func (u *UserService) ResetOTPCode(ctx context.Context, userId int64) (string, e
 		return "", gowk.NewError("invalid user ID")
 	}
 
-	newSecret := util.generateOTPSecret()
+	newSecret := util.GenerateOTPSecret()
 
 	// For now, return the new secret as placeholder
 	// This would require database query updates

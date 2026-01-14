@@ -59,7 +59,7 @@ func (o *OTP) ToUint32(bytes []byte) uint32 {
 }
 
 // generateOTPSecret generates a new OTP secret key
-func generateOTPSecret() string {
+func GenerateOTPSecret() string {
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 	result := make([]byte, 16)
 	for i := range result {

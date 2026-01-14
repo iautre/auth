@@ -11,7 +11,6 @@ import (
 	"github.com/iautre/auth/internal/service"
 	"github.com/iautre/auth/pkg/dto"
 	authpb "github.com/iautre/auth/pkg/proto"
-	"github.com/iautre/auth/pkg/util"
 	"github.com/iautre/gowk"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -508,9 +507,9 @@ func (h *OAuth2ClientHandler) RegenerateClientSecret(ctx *gin.Context) {
 	}
 
 	// Generate new secret
-	newSecret := util.generateOTPSecret() + "!" // Add some complexity
+	newSecret := gowk.GenerateRandomString(64)
 
-	// Update client with new secret
+	// Update client with new secrets
 	params := &dto.OAuth2ClientUpdateParams{
 		ID:     clientID,
 		Secret: newSecret,
