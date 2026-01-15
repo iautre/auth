@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/base64"
 	"net/http"
 	"net/url"
 	"strings"
@@ -63,24 +62,12 @@ func (u *UserHandler) requireBasicAuth(ctx *gin.Context) {
 }
 
 func (u *UserHandler) validateBasicAuth(ctx *gin.Context) error {
-	auth := ctx.GetHeader("Authorization")
+	auth := ctx.GetString(gowk.ContextBasicAuthKey)
 	if auth == "" {
-		return gowk.NewError("missing Authorization header")
+		return nil
 	}
-
-	// Parse Basic Auth: "Basic base64(username:password)"
-	if len(auth) < 6 || auth[:6] != "Basic " {
-		return gowk.NewError("invalid Authorization header format")
-	}
-
-	// Decode base64
-	decoded, err := base64.StdEncoding.DecodeString(auth[6:])
-	if err != nil {
-		return gowk.NewError("invalid Base64 encoding")
-	}
-
 	// Split username and password
-	parts := strings.SplitN(string(decoded), ":", 2)
+	parts := strings.SplitN(auth, ":", 2)
 	if len(parts) != 2 {
 		return gowk.NewError("invalid credentials format")
 	}

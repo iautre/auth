@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/gin-gonic/gin v1.11.0
-	github.com/iautre/gowk v0.0.0-20260114124705-c148ff1be140
+	github.com/iautre/gowk v0.0.0-20260115152124-2a21e92bdba5
 	github.com/jackc/pgx/v5 v5.8.0
 	google.golang.org/grpc v1.78.0
 	google.golang.org/protobuf v1.36.11
@@ -52,6 +52,6 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260112192933-99fd39fd28a9 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260114163908-3f89685c29c3 // indirect
 	gorm.io/gorm v1.31.1 // indirect
 )

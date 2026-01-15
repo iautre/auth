@@ -31,7 +31,7 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	ro.POST("/user/:userId/reset-otp", gowk.CheckLogin, handler.AdminMiddleware, u.ResetOTPCode)
 
 	// OAuth2 endpoints
-	ro.GET("/oauth2/auth", u.BasicAuthMiddleware, o.OAuth2Auth)
+	ro.GET("/oauth2/auth", gowk.CheckLogin, u.BasicAuthMiddleware, o.OAuth2Auth)
 	ro.POST("/oauth2/token", o.OAuth2Token)
 
 	// OIDC endpoints

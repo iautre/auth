@@ -27,11 +27,12 @@ FROM scratch as production
 
 ENV GO_ENV=prod
 ENV GIN_MODE=release
-ENV HTTP_SERVER_ADDR=8020
-ENV GRPC_SERVER_ADDR=80201
+ENV HTTP_SERVER_ADDR=:3030
+ENV GRPC_SERVER_ADDR=:3031
 
 COPY --from=go-builder /app/server /
 COPY --from=go-builder /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
-EXPOSE 8020
+EXPOSE 3030
+EXPOSE 3031
 ENTRYPOINT ["/server"]
