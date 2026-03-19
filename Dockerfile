@@ -9,7 +9,7 @@ RUN set -x \
     && apk --no-cache add tzdata upx git \
     # && apk --no-cache add tzdata \
     && go env -w GO111MODULE=on \
-    && go env -w GOPROXY=https://goproxy.io,direct \
+    && go env -w GOPROXY=https://goproxy.cn,direct \
     && go env -w CGO_ENABLED=0 \
     && go env -w GOOS=linux
 
