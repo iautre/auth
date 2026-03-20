@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/iautre/auth/internal/service"
@@ -25,23 +27,27 @@ func NewUserHandler(ctx context.Context) *UserHandler {
 
 func (u *UserHandler) Login(ctx *gin.Context) {
 	var params dto.LoginParams
-	err := ctx.ShouldBind(&params)
-	if err != nil {
+	if err := ctx.ShouldBind(&params); err != nil {
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
 	}
+
 	var userService service.UserService
 	user, err := userService.Login(ctx, &params)
 	if err != nil {
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
 	}
-	token, err := gowk.Login(ctx, user.ID)
+
+	// 签发 JWT（RS256），其他服务凭 JWKS 公钥本地验证，无需 Redis 或 gRPC
+	var oidcService service.OIDCService
+	jwtToken, err := oidcService.GenerateIDToken(ctx, user.ID, "auth", "")
 	if err != nil {
-		gowk.Response(ctx, http.StatusBadRequest, nil, err)
+		gowk.Response(ctx, http.StatusInternalServerError, nil, err)
 		return
 	}
-	gowk.Response(ctx, http.StatusOK, token, nil)
+
+	gowk.Response(ctx, http.StatusOK, jwtToken, nil)
 }
 
 func (u *UserHandler) BasicAuthMiddleware(ctx *gin.Context) {
@@ -378,6 +384,46 @@ func (g *GrpcHandler) OIDCJwks(ctx context.Context, req *emptypb.Empty) (*authpb
 
 	return &authpb.OIDCJwksResponse{
 		Keys: keys,
+	}, nil
+}
+
+// nativeToken mirrors gowk.Token JSON structure for Redis deserialization.
+type nativeToken struct {
+	Value     string `json:"value"`
+	LoginId   int64  `json:"loginId"`
+	Device    string `json:"device"`
+	Timeout   int64  `json:"timeout"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+const redisTokenPrefix = "ATOKEN_TOKEN_"
+
+// CheckToken 从 Redis 验证 auth 服务签发的 native token，返回用户 ID。
+// 其他服务通过 gRPC 调用此接口，无需直连 Redis 即可完成 token 鉴权。
+func (g *GrpcHandler) CheckToken(ctx context.Context, req *authpb.CheckTokenRequest) (*authpb.CheckTokenResponse, error) {
+	if req.Token == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+
+	jsonData, err := gowk.Redis().Get(ctx, redisTokenPrefix+req.Token).Result()
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "invalid or expired token")
+	}
+
+	var t nativeToken
+	if err := json.Unmarshal([]byte(jsonData), &t); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse token")
+	}
+
+	if t.Timeout > 0 && t.CreatedAt > 0 {
+		if time.Now().Unix() > t.CreatedAt+t.Timeout {
+			return nil, status.Error(codes.Unauthenticated, "token expired")
+		}
+	}
+
+	return &authpb.CheckTokenResponse{
+		UserId: t.LoginId,
+		Device: t.Device,
 	}, nil
 }
 

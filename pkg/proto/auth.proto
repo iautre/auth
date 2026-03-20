@@ -11,6 +11,9 @@ service AuthService {
   rpc OIDCUserInfo(OIDCUserInfoRequest) returns (OIDCUserInfoResponse);
   rpc OIDCJwks(google.protobuf.Empty) returns (OIDCJwksResponse);
   rpc OIDCDiscovery(google.protobuf.Empty) returns (OIDCDiscoveryResponse);
+  // CheckToken 验证 auth 服务签发的 native token（存储于共享 Redis 的 UUID token）。
+  // 其他服务（console 等）通过此接口完成 token 鉴权，无需直连 Redis。
+  rpc CheckToken(CheckTokenRequest) returns (CheckTokenResponse);
 }
 
 message OAuth2TokenRequest {
@@ -65,6 +68,15 @@ message OIDCJwk {
   string n = 4;
   string e = 5;
   string alg = 6;
+}
+
+message CheckTokenRequest {
+  string token = 1;
+}
+
+message CheckTokenResponse {
+  int64 user_id = 1;
+  string device = 2;
 }
 
 message OIDCDiscoveryResponse {

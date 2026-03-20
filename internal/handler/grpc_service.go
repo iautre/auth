@@ -39,3 +39,8 @@ func (s *AuthServiceServer) OIDCDiscovery(ctx context.Context, req *emptypb.Empt
 func (s *AuthServiceServer) OIDCJwks(ctx context.Context, req *emptypb.Empty) (*proto.OIDCJwksResponse, error) {
 	return s.Handler.OIDCJwks(ctx, req)
 }
+
+// CheckToken 验证 native token 并返回用户 ID
+func (s *AuthServiceServer) CheckToken(ctx context.Context, req *proto.CheckTokenRequest) (*proto.CheckTokenResponse, error) {
+	return s.Handler.CheckToken(ctx, req)
+}

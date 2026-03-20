@@ -403,6 +403,16 @@ func base64Decode(data string) ([]byte, error) {
 }
 
 // OIDCJwks 获取JWKS公钥
+// CheckToken 通过 gRPC 验证 auth 服务签发的 native token，返回用户 ID 和设备信息。
+// 其他服务用此方法替代直接查询 Redis，实现无状态的跨服务 token 验证。
+func (c *AuthClient) CheckToken(ctx context.Context, tokenValue string) (*proto.CheckTokenResponse, error) {
+	resp, err := c.authClient.CheckToken(ctx, &proto.CheckTokenRequest{Token: tokenValue})
+	if err != nil {
+		return nil, fmt.Errorf("check token failed: %w", err)
+	}
+	return resp, nil
+}
+
 func (c *AuthClient) OIDCJwks(ctx context.Context) (*proto.OIDCJwksResponse, error) {
 	req := &emptypb.Empty{}
 
