@@ -7,13 +7,13 @@ import (
 	"github.com/iautre/auth/internal/db"
 )
 
-func StoreContextOAuth2Token(ctx *gin.Context, client *db.Oauth2Token) {
+func StoreContextOAuth2Token(ctx *gin.Context, client *db.AuthOauth2Token) {
 	ctx.Set(ContextOAuth2Token, client)
 	ctx.Set(ContextUserID, client.UserID)
 }
 
-func LoadContextOAuth2Token(ctx context.Context) (*db.Oauth2Token, bool) {
-	client, exists := ctx.Value(ContextOAuth2Token).(*db.Oauth2Token)
+func LoadContextOAuth2Token(ctx context.Context) (*db.AuthOauth2Token, bool) {
+	client, exists := ctx.Value(ContextOAuth2Token).(*db.AuthOauth2Token)
 	return client, exists
 }
 func StoreContextAdmin(ctx *gin.Context, isAdmin bool) {

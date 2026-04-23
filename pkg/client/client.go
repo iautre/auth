@@ -14,8 +14,17 @@ import (
 	"github.com/iautre/auth/pkg/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+// grpcMsg 从 gRPC 错误中提取人类可读的 message，去掉 "rpc error: code = ... desc = " 前缀。
+func grpcMsg(err error) error {
+	if st, ok := status.FromError(err); ok {
+		return fmt.Errorf("%s", st.Message())
+	}
+	return err
+}
 
 // AuthClient OAuth2客户端
 type AuthClient struct {
@@ -408,7 +417,7 @@ func base64Decode(data string) ([]byte, error) {
 func (c *AuthClient) CheckToken(ctx context.Context, tokenValue string) (*proto.CheckTokenResponse, error) {
 	resp, err := c.authClient.CheckToken(ctx, &proto.CheckTokenRequest{Token: tokenValue})
 	if err != nil {
-		return nil, fmt.Errorf("check token failed: %w", err)
+		return nil, grpcMsg(err)
 	}
 	return resp, nil
 }
@@ -433,6 +442,33 @@ func (c *AuthClient) OIDCDiscovery(ctx context.Context) (*proto.OIDCDiscoveryRes
 		return nil, fmt.Errorf("get OIDC discovery failed: %v", err)
 	}
 
+	return resp, nil
+}
+
+// GetUserInfo 根据 user_id 获取昵称、分组，供远程模式下的调用方填入 context。
+func (c *AuthClient) GetUserInfo(ctx context.Context, userID int64) (*proto.GetUserInfoResponse, error) {
+	resp, err := c.authClient.GetUserInfo(ctx, &proto.GetUserInfoRequest{UserId: userID})
+	if err != nil {
+		return nil, grpcMsg(err)
+	}
+	return resp, nil
+}
+
+// Login 通过 gRPC 调用 auth 服务完成登录，返回 gowk token 和用户基本信息。
+func (c *AuthClient) Login(ctx context.Context, account, code string) (*proto.LoginResponse, error) {
+	resp, err := c.authClient.Login(ctx, &proto.LoginRequest{Account: account, Code: code})
+	if err != nil {
+		return nil, grpcMsg(err)
+	}
+	return resp, nil
+}
+
+// GetFullUserInfo 获取完整用户信息（用于 /user/info 接口）。
+func (c *AuthClient) GetFullUserInfo(ctx context.Context, userID int64) (*proto.FullUserInfoResponse, error) {
+	resp, err := c.authClient.GetFullUserInfo(ctx, &proto.GetUserInfoRequest{UserId: userID})
+	if err != nil {
+		return nil, grpcMsg(err)
+	}
 	return resp, nil
 }
 

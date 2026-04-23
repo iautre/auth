@@ -23,7 +23,8 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	oc := handler.NewOAuth2ClientHandler(ctx)
 
 	// User endpoints
-	ro.POST("/login", u.Login)
+	// 注意：/login 由调用方（cmd 独立部署 或 embed.Setup）统一注册，
+	// 避免与 embed.Setup 外层注册冲突导致 gin 重复注册 panic。
 	ro.GET("/user/info", gowk.CheckLogin, u.UserInfo)
 	ro.POST("/sso/login", u.SSOLogin)
 

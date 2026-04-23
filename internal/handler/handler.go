@@ -427,6 +427,88 @@ func (g *GrpcHandler) CheckToken(ctx context.Context, req *authpb.CheckTokenRequ
 	}, nil
 }
 
+// nativeTokenTTL 与 gowk 默认 token 超时保持一致（30 天）。
+const nativeTokenTTL int64 = 30 * 24 * 60 * 60
+
+// GetUserInfo 根据 user_id 返回昵称与用户组，供远程模式下的调用方填入 context。
+func (g *GrpcHandler) GetUserInfo(ctx context.Context, req *authpb.GetUserInfoRequest) (*authpb.GetUserInfoResponse, error) {
+	if req.UserId <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	var userService service.UserService
+	user, err := userService.GetById(ctx, req.UserId)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
+	}
+	return &authpb.GetUserInfoResponse{
+		UserId:   user.ID,
+		Nickname: user.Nickname.String,
+		Group:    user.Group.String,
+	}, nil
+}
+
+// Login 验证账号/OTP，签发 native token 并存入 Redis，供 CheckToken 验证。
+func (g *GrpcHandler) Login(ctx context.Context, req *authpb.LoginRequest) (*authpb.LoginResponse, error) {
+	if req.Account == "" || req.Code == "" {
+		return nil, status.Error(codes.InvalidArgument, "account and code are required")
+	}
+
+	var userService service.UserService
+	user, err := userService.Login(ctx, &dto.LoginParams{
+		Account: req.Account,
+		Code:    req.Code,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Unauthenticated, "%v", err)
+	}
+
+	tokenValue := gowk.UUID()
+	t := nativeToken{
+		Value:     tokenValue,
+		LoginId:   user.ID,
+		Timeout:   nativeTokenTTL,
+		CreatedAt: time.Now().Unix(),
+	}
+	payload, err := json.Marshal(t)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "marshal token: %v", err)
+	}
+	if err := gowk.Redis().Set(ctx, redisTokenPrefix+tokenValue, string(payload), time.Duration(nativeTokenTTL)*time.Second).Err(); err != nil {
+		return nil, status.Errorf(codes.Internal, "store token: %v", err)
+	}
+
+	return &authpb.LoginResponse{
+		Token:    tokenValue,
+		UserId:   user.ID,
+		Nickname: user.Nickname.String,
+		Avatar:   user.Avatar.String,
+	}, nil
+}
+
+// GetFullUserInfo 返回完整用户信息（供远程模式的 /user/info 接口使用）。
+func (g *GrpcHandler) GetFullUserInfo(ctx context.Context, req *authpb.GetUserInfoRequest) (*authpb.FullUserInfoResponse, error) {
+	if req.UserId <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "user_id is required")
+	}
+	var userService service.UserService
+	user, err := userService.GetById(ctx, req.UserId)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
+	}
+	return &authpb.FullUserInfoResponse{
+		Id:          user.ID,
+		Phone:       user.Phone.String,
+		Email:       user.Email.String,
+		Nickname:    user.Nickname.String,
+		Group:       user.Group.String,
+		Avatar:      user.Avatar.String,
+		IsVerified:  user.IsVerified.Bool,
+		Enabled:     user.Enabled,
+		LastLoginAt: user.LastLoginAt.Time.Format(time.RFC3339),
+		Created:     user.Created.Time.Format(time.RFC3339),
+	}, nil
+}
+
 // OAuth2ClientHandler handles OAuth2 client management HTTP requests
 type OAuth2ClientHandler struct {
 	clientService *service.OAuth2ClientService

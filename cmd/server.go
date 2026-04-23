@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/handler"
 	"github.com/iautre/auth/internal/route"
 	authpb "github.com/iautre/auth/pkg/proto"
@@ -36,7 +37,12 @@ func Run() {
 
 	// Create servers
 	r := gowk.New()
-	route.Router(r.Group(gowk.AuthAPIPrefix()))
+	apiGroup := r.Group(config.AuthAPIPrefix())
+	// 独立部署模式：/login 使用 HTTP UserHandler（签发 JWT ID Token）。
+	// embed 模式下 /login 由 embed.Setup 注册为 mw.loginHandler（签发 gowk native token）。
+	userHandler := handler.NewUserHandler(context.Background())
+	apiGroup.POST("/login", userHandler.Login)
+	route.Router(apiGroup)
 
 	grpcServer := gowk.NewGrpcServer()
 	authServer := handler.NewAuthServiceServer(context.Background())

@@ -44,3 +44,18 @@ func (s *AuthServiceServer) OIDCJwks(ctx context.Context, req *emptypb.Empty) (*
 func (s *AuthServiceServer) CheckToken(ctx context.Context, req *proto.CheckTokenRequest) (*proto.CheckTokenResponse, error) {
 	return s.Handler.CheckToken(ctx, req)
 }
+
+// GetUserInfo 根据 user_id 返回昵称、分组
+func (s *AuthServiceServer) GetUserInfo(ctx context.Context, req *proto.GetUserInfoRequest) (*proto.GetUserInfoResponse, error) {
+	return s.Handler.GetUserInfo(ctx, req)
+}
+
+// Login 验证账号/OTP，签发 gowk token 并存入 auth Redis
+func (s *AuthServiceServer) Login(ctx context.Context, req *proto.LoginRequest) (*proto.LoginResponse, error) {
+	return s.Handler.Login(ctx, req)
+}
+
+// GetFullUserInfo 返回完整用户信息
+func (s *AuthServiceServer) GetFullUserInfo(ctx context.Context, req *proto.GetUserInfoRequest) (*proto.FullUserInfoResponse, error) {
+	return s.Handler.GetFullUserInfo(ctx, req)
+}

@@ -99,7 +99,7 @@ type OAuth2ClientResponse struct {
 	Enabled         bool   `json:"enabled"` // true = active, false = disabled
 }
 
-func BuildOAuth2ClientResponse(client db.Oauth2Client) *OAuth2ClientResponse {
+func BuildOAuth2ClientResponse(client db.AuthOauth2Client) *OAuth2ClientResponse {
 	return &OAuth2ClientResponse{
 		ID:              client.ID,
 		Name:            client.Name,

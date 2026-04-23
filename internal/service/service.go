@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/iautre/auth/internal/config"
 	db2 "github.com/iautre/auth/internal/db"
 	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/auth/pkg/util"
@@ -34,40 +35,40 @@ type UserService struct {
 	BaseService
 }
 
-func (u *UserService) GetById(ctx context.Context, id int64) (db2.User, error) {
+func (u *UserService) GetById(ctx context.Context, id int64) (db2.AuthUser, error) {
 	if id <= 0 {
-		return db2.User{}, gowk.NewError("invalid user ID")
+		return db2.AuthUser{}, gowk.NewError("invalid user ID")
 	}
 	return u.getQueries(ctx).UserById(ctx, id)
 }
 
-func (u *UserService) GetByPhone(ctx context.Context, phone string) (db2.User, error) {
+func (u *UserService) GetByPhone(ctx context.Context, phone string) (db2.AuthUser, error) {
 	if phone == "" {
-		return db2.User{}, gowk.NewError("phone number cannot be empty")
+		return db2.AuthUser{}, gowk.NewError("phone number cannot be empty")
 	}
 	if !isValidPhone(phone) {
-		return db2.User{}, gowk.NewError("invalid phone number format")
+		return db2.AuthUser{}, gowk.NewError("invalid phone number format")
 	}
 	return u.getQueries(ctx).UserByPhone(ctx, pgtype.Text{String: phone, Valid: true})
 }
 
 // Login 登录
-func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.User, error) {
+func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.AuthUser, error) {
 	// Get user by phone (for now, only phone is supported)
 	user, err := u.GetByPhone(ctx, params.Account)
 	if err != nil {
-		return db2.User{}, gowk.NewError("user not found")
+		return db2.AuthUser{}, gowk.NewError("user not found")
 	}
 
 	// Check user status
 	if !user.Enabled {
-		return db2.User{}, gowk.NewError("account is disabled")
+		return db2.AuthUser{}, gowk.NewError("account is disabled")
 	}
 
 	// Verify OTP code
 	var otp util.OTP
 	if !otp.CheckCode(user.Secret.String, params.Code) {
-		return db2.User{}, gowk.NewError("invalid verification code")
+		return db2.AuthUser{}, gowk.NewError("invalid verification code")
 	}
 
 	// Update login info (simplified for now)
@@ -81,9 +82,9 @@ func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.U
 }
 
 // GetByAccount retrieves user by phone or email (simplified version)
-func (u *UserService) GetByAccount(ctx context.Context, account string) (db2.User, error) {
+func (u *UserService) GetByAccount(ctx context.Context, account string) (db2.AuthUser, error) {
 	if account == "" {
-		return db2.User{}, gowk.NewError("account cannot be empty")
+		return db2.AuthUser{}, gowk.NewError("account cannot be empty")
 	}
 
 	// For now, just use phone lookup
@@ -92,14 +93,14 @@ func (u *UserService) GetByAccount(ctx context.Context, account string) (db2.Use
 }
 
 // GetByEmail retrieves user by email
-func (u *UserService) GetByEmail(ctx context.Context, email string) (db2.User, error) {
+func (u *UserService) GetByEmail(ctx context.Context, email string) (db2.AuthUser, error) {
 	if email == "" {
-		return db2.User{}, gowk.NewError("email cannot be empty")
+		return db2.AuthUser{}, gowk.NewError("email cannot be empty")
 	}
 
 	// For now, return empty user as placeholder
 	// This would require database query implementation with proper email field
-	return db2.User{}, gowk.NewError("email login not yet implemented")
+	return db2.AuthUser{}, gowk.NewError("email login not yet implemented")
 }
 
 // UpdateUserStatus updates user status
@@ -188,7 +189,7 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 	return code, nil
 }
 
-func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.OAuth2AuthRequest) (*db2.Oauth2Client, error) {
+func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.OAuth2AuthRequest) (*db2.AuthOauth2Client, error) {
 	// Validate client from database
 	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, req.ClientID)
 	if err != nil {
@@ -217,7 +218,7 @@ func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.
 	return &client, nil
 }
 
-func (o *OAuth2Service) ValidateAuthorizationCode(ctx context.Context, code, clientID string) (*db2.Oauth2AuthorizationCode, error) {
+func (o *OAuth2Service) ValidateAuthorizationCode(ctx context.Context, code, clientID string) (*db2.AuthOauth2AuthorizationCode, error) {
 	queries := o.getQueries(ctx)
 
 	// Get authorization code from database
@@ -483,7 +484,7 @@ func (o *OAuth2Service) RefreshToken(ctx context.Context, refreshToken string) (
 }
 
 // ValidateAccessToken validates access token from database
-func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken string) (*db2.Oauth2Token, error) {
+func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken string) (*db2.AuthOauth2Token, error) {
 	// Get token from database
 	queries := o.getQueries(ctx)
 	oauth2Token, err := queries.GetOAuth2Token(ctx, accessToken)
@@ -503,7 +504,7 @@ func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken str
 type SSOService struct{}
 
 func (s *SSOService) LoginWithProvider(ctx context.Context, req *dto.SSOLoginRequest) (*dto.SSOLoginResponse, error) {
-	user := db2.User{
+	user := db2.AuthUser{
 		ID:       123,
 		Phone:    pgtype.Text{String: "12345678901", Valid: true}, // Default phone
 		Email:    pgtype.Text{String: req.Provider + "@example.com", Valid: true},
@@ -534,7 +535,7 @@ func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
 	baseURL := gowk.BaseURL()
 
 	// Get normalized API prefix
-	prefix := gowk.AuthAPIPrefix()
+	prefix := config.AuthAPIPrefix()
 
 	// Build endpoints safely
 	buildEndpoint := func(path string) string {

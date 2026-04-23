@@ -1,6 +1,11 @@
 # Makefile for auth protobuf and sqlc code generation
 
-.PHONY: proto sqlc generate clean build help
+IMAGE     := auth
+SERVER    := root@upload.autre.cn
+HTTP_PORT := 8087
+GRPC_PORT := 50051
+
+.PHONY: proto sqlc generate clean build help deploy restart logs stop migrate
 
 # Default target
 help:
@@ -80,3 +85,36 @@ run-custom: build
 
 # Example usage:
 # make run-custom HTTP_PORT=:9000 GRPC_PORT=:6000
+
+## 构建 → 传输 → 服务器重启（一键部署）
+deploy: build-image
+	@echo ">>> 传输镜像到服务器..."
+	docker save $(IMAGE) | ssh $(SERVER) "docker load"
+	@echo ">>> 重启容器..."
+	$(MAKE) restart
+
+## 不重新构建，只重启服务器容器
+restart:
+	ssh $(SERVER) '\
+		docker rm -f $(IMAGE) 2>/dev/null || true && \
+		docker run -d \
+			--name $(IMAGE) \
+			--network docker_net \
+			--network-alias $(IMAGE) \
+			--restart always \
+			-e HTTP_SERVER_ADDR=:$(HTTP_PORT) \
+			-e GRPC_SERVER_ADDR=:$(GRPC_PORT) \
+			-e DATABASE_DSN="postgres://postgres:REDACTED@postgres:5432/auth?pool_max_conns=20" \
+			-e REDIS_ADDR=redis:6379 \
+			$(IMAGE):latest \
+	'
+	@echo ">>> 容器已启动，查看日志:"
+	$(MAKE) logs
+
+## 查看服务器容器日志
+logs:
+	ssh $(SERVER) "docker logs --tail=50 $(IMAGE)"
+
+## 停止并删除容器
+stop:
+	ssh $(SERVER) "docker rm -f $(IMAGE) || true"
