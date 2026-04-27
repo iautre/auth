@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -128,19 +129,20 @@ func (u *UserHandler) UserInfo(ctx *gin.Context) {
 	gowk.Response(ctx, http.StatusOK, userRes, nil)
 }
 
-// SSO Login endpoint
+// SSOLogin 暂未实现，明确返回 501 以避免下游误以为可用。
 func (u *UserHandler) SSOLogin(ctx *gin.Context) {
 	var params dto.SSOLoginRequest
-	err := ctx.ShouldBind(&params)
-	if err != nil {
+	if err := ctx.ShouldBind(&params); err != nil {
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
 	}
-
-	// Gin binding validation already handles all validation rules via binding tags
 	var ssoService service.SSOService
 	response, err := ssoService.LoginWithProvider(ctx, &params)
 	if err != nil {
+		if errors.Is(err, service.ErrSSONotImplemented) {
+			gowk.Response(ctx, http.StatusNotImplemented, nil, err)
+			return
+		}
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
 	}
@@ -184,8 +186,15 @@ func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
 		return
 	}
 
-	// Get user ID from session or token
+	// 取登录用户 ID。前置中间件 gowk.CheckLogin / BasicAuthMiddleware 已经把
+	// 已认证用户写入 ContextLoginIdKey；但当这些中间件存在某些"静默放行"路径时，
+	// LoginId 可能是 0。无主授权码会让攻击者用 sub=0 换 token，必须在此再设一道闸：
+	// 没有有效用户身份直接 401，由前端跳转到登录页。
 	userID := gowk.LoginId(ctx)
+	if userID <= 0 {
+		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("login required"))
+		return
+	}
 
 	// Validate request using existing service layer
 	_, err := o.oauth2Service.ValidateOAuth2AuthRequest(ctx, &params)
@@ -195,7 +204,17 @@ func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
 	}
 
 	// Generate authorization code using existing service
-	authCode, err := o.oauth2Service.GenerateAuthorizationCode(ctx, params.ClientID, userID, params.RedirectURI, params.Scope, params.State, params.Nonce)
+	authCode, err := o.oauth2Service.GenerateAuthorizationCode(
+		ctx,
+		params.ClientID,
+		userID,
+		params.RedirectURI,
+		params.Scope,
+		params.State,
+		params.Nonce,
+		params.CodeChallenge,
+		params.CodeChallengeMethod,
+	)
 	if err != nil {
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
@@ -263,7 +282,7 @@ func (o *OAuth2Handler) OIDCUserInfo(ctx *gin.Context) {
 }
 
 func (o *OAuth2Handler) OIDCJwks(ctx *gin.Context) {
-	jwks := o.oidcService.GetJwks()
+	jwks := o.oidcService.GetJwks(ctx.Request.Context())
 	gowk.Response(ctx, http.StatusOK, jwks, nil)
 }
 
@@ -367,7 +386,7 @@ func (g *GrpcHandler) OIDCDiscovery(ctx context.Context, req *emptypb.Empty) (*a
 // OIDCJwks handles OIDC JWKS endpoint - gRPC version
 func (g *GrpcHandler) OIDCJwks(ctx context.Context, req *emptypb.Empty) (*authpb.OIDCJwksResponse, error) {
 	// Use existing OIDCService
-	jwks := g.oidcService.GetJwks()
+	jwks := g.oidcService.GetJwks(ctx)
 
 	// Convert to gRPC response format
 	var keys []*authpb.OIDCJwk
@@ -620,23 +639,11 @@ func (h *OAuth2ClientHandler) RegenerateClientSecret(ctx *gin.Context) {
 		gowk.Response(ctx, http.StatusBadRequest, nil, gowk.NewError("client ID is required"))
 		return
 	}
-
-	// Generate new secret
 	newSecret := gowk.GenerateRandomString(64)
-
-	// Update client with new secrets
-	params := &dto.OAuth2ClientUpdateParams{
-		ID:     clientID,
-		Secret: newSecret,
-	}
-
-	_, err := h.clientService.UpdateOAuth2Client(ctx, params)
-	if err != nil {
+	if _, err := h.clientService.RegenerateClientSecret(ctx, clientID, newSecret); err != nil {
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
 	}
-
-	// Return only the new secret (not the full client info)
 	gowk.Response(ctx, http.StatusOK, map[string]interface{}{
 		"client_id":  clientID,
 		"new_secret": newSecret,

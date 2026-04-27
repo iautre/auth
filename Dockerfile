@@ -1,4 +1,4 @@
-FROM golang:1.25.5-alpine3.22 as go-builder
+FROM golang:1.26-alpine3.22 AS go-builder
 
 WORKDIR /app
 COPY . /app
@@ -23,7 +23,7 @@ RUN set -x \
     && rm -f server_temp
 
 # production stage
-FROM scratch as production
+FROM scratch AS production
 
 ENV GO_ENV=prod
 ENV GIN_MODE=release

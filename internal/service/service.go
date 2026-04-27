@@ -6,10 +6,15 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/subtle"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
-	"net/url"
+	"log/slog"
+	"math/big"
 	"regexp"
 	"strings"
 	"sync"
@@ -71,11 +76,9 @@ func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.A
 		return db2.AuthUser{}, gowk.NewError("invalid verification code")
 	}
 
-	// Update login info (simplified for now)
-	err = u.UpdateLoginInfo(ctx, user.ID)
-	if err != nil {
-		// Log error but don't fail login
-		// For now, continue without updating login info
+	// Update login info (best-effort：失败不阻断登录，但需要记录便于排查)
+	if err := u.UpdateLoginInfo(ctx, user.ID); err != nil {
+		slog.WarnContext(ctx, "update login info failed", "user_id", user.ID, "err", err)
 	}
 
 	return user, nil
@@ -103,106 +106,97 @@ func (u *UserService) GetByEmail(ctx context.Context, email string) (db2.AuthUse
 	return db2.AuthUser{}, gowk.NewError("email login not yet implemented")
 }
 
-// UpdateUserStatus updates user status
-func (u *UserService) UpdateUserStatus(ctx context.Context, userId int64, status int32) error {
-	if userId <= 0 {
-		return gowk.NewError("invalid user ID")
-	}
-
-	if status < 0 || status > 2 {
-		return gowk.NewError("invalid status value")
-	}
-
-	// For now, return success as placeholder
-	// This would require database query updates
-	return nil
-}
-
-// ResetOTPCode generates new OTP secret for user
+// ResetOTPCode 重新生成用户 OTP 秘钥并写库，返回新秘钥。
 func (u *UserService) ResetOTPCode(ctx context.Context, userId int64) (string, error) {
 	if userId <= 0 {
 		return "", gowk.NewError("invalid user ID")
 	}
-
-	newSecret := util.GenerateOTPSecret()
-
-	// For now, return the new secret as placeholder
-	// This would require database query updates
+	newSecret, err := util.GenerateOTPSecret()
+	if err != nil {
+		return "", fmt.Errorf("generate otp secret: %w", err)
+	}
+	if err := u.getQueries(ctx).UpdateUserSecret(ctx, db2.UpdateUserSecretParams{
+		ID:     userId,
+		Secret: pgtype.Text{String: newSecret, Valid: true},
+	}); err != nil {
+		return "", fmt.Errorf("update user secret: %w", err)
+	}
 	return newSecret, nil
 }
 
-// UpdateLoginInfo updates user's last login time and increment login count
+// UpdateLoginInfo 更新用户最近登录时间并自增登录计数。
 func (u *UserService) UpdateLoginInfo(ctx context.Context, userId int64) error {
 	if userId <= 0 {
 		return gowk.NewError("invalid user ID")
 	}
-
-	// For now, return success as placeholder
-	// This would require database query updates
-	return nil
-}
-
-// isValidEmail validates email format
-func isValidEmail(email string) bool {
-	emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
-	re := regexp.MustCompile(emailRegex)
-	return re.MatchString(email)
+	return u.getQueries(ctx).UpdateUserLoginInfo(ctx, userId)
 }
 
 // OAuth2 Service
 type OAuth2Service struct {
 	BaseService
-	queries *db2.Queries
 }
 
-// NewOAuth2Service creates a new OAuth2Service
-func NewOAuth2Service(ctx context.Context) *OAuth2Service {
-	return &OAuth2Service{
-		BaseService: BaseService{},
-		queries:     db2.New(gowk.DB(ctx)),
+// NewOAuth2Service creates a new OAuth2Service.
+// 真正的 *db2.Queries 通过 ctx 在每次调用时按需获取（BaseService.getQueries），
+// 这里不缓存以避免 service 与请求 ctx 的生命周期错位。
+func NewOAuth2Service(_ context.Context) *OAuth2Service {
+	return &OAuth2Service{}
+}
+
+// GenerateAuthorizationCode 生成并落库一次性授权码。
+// codeChallenge / codeChallengeMethod 用于 PKCE（RFC 7636）：
+//   - 不传则代表非 PKCE 流；
+//   - method 仅接受 "S256" / "plain"，DTO 已做绑定校验，这里再做一道保险。
+func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID string, userID int64, redirectURI, scope, state, nonce, codeChallenge, codeChallengeMethod string) (string, error) {
+	if codeChallenge != "" {
+		if codeChallengeMethod == "" {
+			codeChallengeMethod = "plain"
+		}
+		if codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
+			return "", gowk.NewError("unsupported code_challenge_method")
+		}
+	} else if codeChallengeMethod != "" {
+		return "", gowk.NewError("code_challenge_method requires code_challenge")
 	}
-}
 
-func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID string, userID int64, redirectURI, scope, state, nonce string) (string, error) {
 	code := gowk.GenerateRandomString(32)
-
-	// Store authorization code in database with expiration (10 minutes)
 	expires := time.Now().Add(10 * time.Minute)
 
-	// Create authorization code record
 	authCode := db2.CreateOAuth2AuthorizationCodeParams{
-		Code:        code,
-		ClientID:    clientID,
-		UserID:      userID,
-		RedirectUri: pgtype.Text{String: redirectURI, Valid: redirectURI != ""},
-		Scope:       pgtype.Text{String: scope, Valid: scope != ""},
-		State:       pgtype.Text{String: state, Valid: state != ""},
-		Nonce:       pgtype.Text{String: nonce, Valid: nonce != ""},
-		Expires:     pgtype.Timestamptz{Time: expires, Valid: true},
+		Code:                code,
+		ClientID:            clientID,
+		UserID:              userID,
+		RedirectUri:         pgtype.Text{String: redirectURI, Valid: redirectURI != ""},
+		Scope:               pgtype.Text{String: scope, Valid: scope != ""},
+		State:               pgtype.Text{String: state, Valid: state != ""},
+		Nonce:               pgtype.Text{String: nonce, Valid: nonce != ""},
+		CodeChallenge:       pgtype.Text{String: codeChallenge, Valid: codeChallenge != ""},
+		CodeChallengeMethod: pgtype.Text{String: codeChallengeMethod, Valid: codeChallenge != ""},
+		Expires:             pgtype.Timestamptz{Time: expires, Valid: true},
 	}
 
-	_, err := o.getQueries(ctx).CreateOAuth2AuthorizationCode(ctx, authCode)
-	if err != nil {
-		return "", fmt.Errorf("failed to store authorization code")
+	if _, err := o.getQueries(ctx).CreateOAuth2AuthorizationCode(ctx, authCode); err != nil {
+		return "", fmt.Errorf("failed to store authorization code: %w", err)
 	}
 
 	return code, nil
 }
 
 func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.OAuth2AuthRequest) (*db2.AuthOauth2Client, error) {
-	// Validate client from database
 	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, req.ClientID)
 	if err != nil {
 		return nil, gowk.NewError("invalid client_id")
 	}
+	if !client.Enabled {
+		return nil, gowk.NewError("client is disabled")
+	}
 
-	// Parse client's redirect URIs from JSON
 	var redirectURIs []string
 	if err := json.Unmarshal([]byte(client.RedirectUris), &redirectURIs); err != nil {
 		return nil, gowk.NewError("invalid client configuration")
 	}
 
-	// Check if redirect_uri is in allowed list
 	validRedirectURI := false
 	for _, uri := range redirectURIs {
 		if uri == req.RedirectURI {
@@ -210,99 +204,99 @@ func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.
 			break
 		}
 	}
-
 	if !validRedirectURI {
 		return nil, gowk.NewError("invalid redirect_uri")
 	}
-
 	return &client, nil
 }
 
-func (o *OAuth2Service) ValidateAuthorizationCode(ctx context.Context, code, clientID string) (*db2.AuthOauth2AuthorizationCode, error) {
+// ValidateAuthorizationCode 取出并消费授权码。
+// redirectURI 用于回放期 redirect_uri 强一致校验（RFC 6749 §4.1.3）：
+// 颁发授权码时存入了 redirect_uri，则换 token 时必须一字不差地传回。
+func (o *OAuth2Service) ValidateAuthorizationCode(ctx context.Context, code, clientID, redirectURI string) (*db2.AuthOauth2AuthorizationCode, error) {
 	queries := o.getQueries(ctx)
 
-	// Get authorization code from database
 	authCode, err := queries.GetOAuth2AuthorizationCode(ctx, code)
 	if err != nil {
 		return nil, gowk.NewError("authorization code not found")
 	}
 
-	// Validate client ID
 	if authCode.ClientID != clientID {
 		return nil, gowk.NewError("client ID mismatch")
 	}
 
-	// Check if authorization code is expired
 	if authCode.Expires.Time.Before(time.Now()) {
 		return nil, gowk.NewError("authorization code expired")
 	}
 
-	// Delete the authorization code after successful validation (one-time use)
-	err = queries.DeleteOAuth2AuthorizationCode(ctx, code)
-	if err != nil {
-		// Log error but don't fail the validation
-		// In production, you might want to handle this more carefully
+	// redirect_uri 必须与授权阶段一致；允许未绑定时跳过比对（罕见场景，保守兼容）。
+	if authCode.RedirectUri.Valid && authCode.RedirectUri.String != "" {
+		if redirectURI == "" || authCode.RedirectUri.String != redirectURI {
+			return nil, gowk.NewError("redirect_uri mismatch")
+		}
+	}
+
+	// 一次性使用：取出后立即删除。失败不阻断（已通过过期时间最终回收），但必须留痕。
+	if err := queries.DeleteOAuth2AuthorizationCode(ctx, code); err != nil {
+		slog.WarnContext(ctx, "delete consumed authorization code failed", "code", code, "err", err)
 	}
 
 	return &authCode, nil
 }
 
-// Helper function to generate and store tokens
-func (o *OAuth2Service) generateAndStoreTokens(ctx context.Context, clientID string, userID int64, scope pgtype.Text) (string, string, error) {
-	// Get client TTL settings
-	queries := db2.New(gowk.DB(ctx))
-	client, err := queries.GetOAuth2Client(ctx, clientID)
+// 默认 TTL：仅在 client 配置缺失时兜底。
+const (
+	defaultAccessTokenTTL  = int64(3600)            // 1h
+	defaultRefreshTokenTTL = int64(30 * 24 * 3600) // 30d
+)
 
-	// Set TTL values with defaults
-	var accessTokenTTL, refreshTokenTTL int64
-	if err != nil {
-		// Use default TTL if client not found
-		accessTokenTTL = int64(3600)            // 1 hour default
-		refreshTokenTTL = int64(30 * 24 * 3600) // 30 days default
+// resolveTokenTTL 拿到 client 的 TTL；client 不存在时回退到默认值。
+func (o *OAuth2Service) resolveTokenTTL(ctx context.Context, clientID string) (accessTTL, refreshTTL int64) {
+	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
+	if err != nil || client.AccessTokenTtl <= 0 {
+		accessTTL = defaultAccessTokenTTL
 	} else {
-		accessTokenTTL = client.AccessTokenTtl
-		refreshTokenTTL = client.RefreshTokenTtl
+		accessTTL = client.AccessTokenTtl
 	}
+	if err != nil || client.RefreshTokenTtl <= 0 {
+		refreshTTL = defaultRefreshTokenTTL
+	} else {
+		refreshTTL = client.RefreshTokenTtl
+	}
+	return
+}
 
-	// Generate tokens
+// generateAccessToken 生成并落库一枚 access token，返回 token 字符串。
+func (o *OAuth2Service) generateAccessToken(ctx context.Context, clientID string, userID int64, scope pgtype.Text, ttl int64) (string, error) {
 	accessToken := gowk.GenerateRandomString(64)
-	refreshToken := gowk.GenerateRandomString(64)
-
-	// Store tokens in database
-	// Set expiration times based on client TTL
-	accessTokenExpires := time.Now().Add(time.Duration(accessTokenTTL) * time.Second)
-	refreshTokenExpires := time.Now().Add(time.Duration(refreshTokenTTL) * time.Second)
-
-	// Store access token
-	accessTokenParams := db2.CreateOAuth2TokenParams{
+	expires := time.Now().Add(time.Duration(ttl) * time.Second)
+	if _, err := o.getQueries(ctx).CreateOAuth2Token(ctx, db2.CreateOAuth2TokenParams{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 		ClientID:    clientID,
 		UserID:      userID,
 		Scope:       scope,
-		Expires:     pgtype.Timestamptz{Time: accessTokenExpires, Valid: true},
+		Expires:     pgtype.Timestamptz{Time: expires, Valid: true},
+	}); err != nil {
+		return "", fmt.Errorf("failed to store access token: %w", err)
 	}
+	return accessToken, nil
+}
 
-	_, err = queries.CreateOAuth2Token(ctx, accessTokenParams)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to store access token: %w", err)
-	}
-
-	// Store refresh token
-	refreshTokenParams := db2.CreateOAuth2RefreshTokenParams{
+// generateRefreshToken 生成并落库一枚 refresh token，返回 token 字符串。
+func (o *OAuth2Service) generateRefreshToken(ctx context.Context, clientID string, userID int64, scope pgtype.Text, ttl int64) (string, error) {
+	refreshToken := gowk.GenerateRandomString(64)
+	expires := time.Now().Add(time.Duration(ttl) * time.Second)
+	if _, err := o.getQueries(ctx).CreateOAuth2RefreshToken(ctx, db2.CreateOAuth2RefreshTokenParams{
 		RefreshToken: refreshToken,
 		ClientID:     clientID,
 		UserID:       userID,
 		Scope:        scope,
-		Expires:      pgtype.Timestamptz{Time: refreshTokenExpires, Valid: true},
+		Expires:      pgtype.Timestamptz{Time: expires, Valid: true},
+	}); err != nil {
+		return "", fmt.Errorf("failed to store refresh token: %w", err)
 	}
-
-	_, err = queries.CreateOAuth2RefreshToken(ctx, refreshTokenParams)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to store refresh token: %w", err)
-	}
-
-	return accessToken, refreshToken, nil
+	return refreshToken, nil
 }
 
 // Helper function to build token response
@@ -344,44 +338,130 @@ func (o *OAuth2Service) ExchangeToken(ctx context.Context, req *dto.OAuth2TokenR
 
 // handleAuthorizationCodeGrant handles authorization_code grant type
 func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *dto.OAuth2TokenRequest) (*dto.OAuth2TokenResponse, error) {
-	// Validate authorization code
-	authCode, err := o.ValidateAuthorizationCode(ctx, req.Code, req.ClientID)
+	client, err := o.authenticateClient(ctx, req.ClientID, req.ClientSecret)
 	if err != nil {
 		return nil, err
 	}
-
-	// Generate and store tokens
-	accessToken, refreshToken, err := o.generateAndStoreTokens(ctx, authCode.ClientID, authCode.UserID, authCode.Scope)
+	authCode, err := o.ValidateAuthorizationCode(ctx, req.Code, req.ClientID, req.RedirectURI)
 	if err != nil {
 		return nil, err
 	}
-
-	// Build response with ID token
+	if err := o.verifyPKCE(authCode, req.CodeVerifier); err != nil {
+		return nil, err
+	}
+	accessTTL, refreshTTL := client.AccessTokenTtl, client.RefreshTokenTtl
+	if accessTTL <= 0 {
+		accessTTL = defaultAccessTokenTTL
+	}
+	if refreshTTL <= 0 {
+		refreshTTL = defaultRefreshTokenTTL
+	}
+	accessToken, err := o.generateAccessToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, accessTTL)
+	if err != nil {
+		return nil, err
+	}
+	refreshToken, err := o.generateRefreshToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, refreshTTL)
+	if err != nil {
+		return nil, err
+	}
 	return o.buildTokenResponse(ctx, accessToken, refreshToken, authCode.Scope, true, authCode.UserID, authCode.ClientID, authCode.Nonce.String)
 }
 
-// handleRefreshTokenGrant handles refresh_token grant type
+// handleRefreshTokenGrant handles refresh_token grant type.
+// 采用 refresh token rotation：换 access token 时同时签发新 refresh token，并回收旧的，避免数据库孤儿、降低重放风险。
 func (o *OAuth2Service) handleRefreshTokenGrant(ctx context.Context, req *dto.OAuth2TokenRequest) (*dto.OAuth2TokenResponse, error) {
-	// Validate refresh token from database
 	queries := o.getQueries(ctx)
 	token, err := queries.GetOAuth2RefreshToken(ctx, req.RefreshToken)
 	if err != nil {
 		return nil, gowk.NewError("invalid or expired refresh token")
 	}
-
-	// Check if refresh token is expired
 	if time.Now().After(token.Expires.Time) {
 		return nil, gowk.NewError("refresh token expired")
 	}
-
-	// Generate and store new access token (reuse refresh token)
-	accessToken, _, err := o.generateAndStoreTokens(ctx, token.ClientID, token.UserID, token.Scope)
+	// refresh 流程也必须验证 client。req.ClientID 若提供则需与 token 匹配，避免跨 client 串用。
+	if req.ClientID != "" && req.ClientID != token.ClientID {
+		return nil, gowk.NewError("client_id does not match refresh token")
+	}
+	client, err := o.authenticateClient(ctx, token.ClientID, req.ClientSecret)
 	if err != nil {
 		return nil, err
 	}
+	accessTTL, refreshTTL := client.AccessTokenTtl, client.RefreshTokenTtl
+	if accessTTL <= 0 {
+		accessTTL = defaultAccessTokenTTL
+	}
+	if refreshTTL <= 0 {
+		refreshTTL = defaultRefreshTokenTTL
+	}
+	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, accessTTL)
+	if err != nil {
+		return nil, err
+	}
+	newRefreshToken, err := o.generateRefreshToken(ctx, token.ClientID, token.UserID, token.Scope, refreshTTL)
+	if err != nil {
+		return nil, err
+	}
+	// 旧 refresh token 立即作废；失败仅记日志，不阻断本次刷新（已颁发新 token）。
+	if err := queries.RevokeOAuth2RefreshToken(ctx, req.RefreshToken); err != nil {
+		slog.WarnContext(ctx, "revoke old refresh token failed", "client_id", token.ClientID, "err", err)
+	}
+	return o.buildTokenResponse(ctx, accessToken, newRefreshToken, token.Scope, false, 0, "", "")
+}
 
-	// Build response without ID token (refresh token flow doesn't generate ID token)
-	return o.buildTokenResponse(ctx, accessToken, req.RefreshToken, token.Scope, false, 0, "", "")
+// authenticateClient 校验 client 存在、启用，并对 confidential client 做 secret 校验。
+// 当 client.Secret 非空时视为 confidential client，必须提供匹配的 client_secret；
+// 空 secret 视为 public client，调用方应配合 PKCE 防御。
+func (o *OAuth2Service) authenticateClient(ctx context.Context, clientID, clientSecret string) (*db2.AuthOauth2Client, error) {
+	if clientID == "" {
+		return nil, gowk.NewError("client_id is required")
+	}
+	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
+	if err != nil {
+		return nil, gowk.NewError("invalid client_id")
+	}
+	if !client.Enabled {
+		return nil, gowk.NewError("client is disabled")
+	}
+	if client.Secret != "" {
+		if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) != 1 {
+			return nil, gowk.NewError("invalid client credentials")
+		}
+	}
+	return &client, nil
+}
+
+// verifyPKCE 校验 code_verifier 是否匹配授权阶段提交的 code_challenge。
+// 颁发时未带 code_challenge → 非 PKCE 流，code_verifier 必须不出现；
+// 颁发时带了 → 必须给出 code_verifier，且按 method 反推后做常时比较。
+func (o *OAuth2Service) verifyPKCE(authCode *db2.AuthOauth2AuthorizationCode, codeVerifier string) error {
+	hasChallenge := authCode.CodeChallenge.Valid && authCode.CodeChallenge.String != ""
+	if !hasChallenge {
+		if codeVerifier != "" {
+			return gowk.NewError("code_verifier provided but authorization code was not bound to PKCE")
+		}
+		return nil
+	}
+	if codeVerifier == "" {
+		return gowk.NewError("code_verifier is required")
+	}
+	method := "plain"
+	if authCode.CodeChallengeMethod.Valid && authCode.CodeChallengeMethod.String != "" {
+		method = authCode.CodeChallengeMethod.String
+	}
+	var expected string
+	switch method {
+	case "plain":
+		expected = codeVerifier
+	case "S256":
+		sum := sha256.Sum256([]byte(codeVerifier))
+		expected = base64.RawURLEncoding.EncodeToString(sum[:])
+	default:
+		return gowk.NewError("unsupported code_challenge_method")
+	}
+	if subtle.ConstantTimeCompare([]byte(expected), []byte(authCode.CodeChallenge.String)) != 1 {
+		return gowk.NewError("invalid code_verifier")
+	}
+	return nil
 }
 
 // handleClientCredentialsGrant handles client_credentials grant type
@@ -417,19 +497,16 @@ func (o *OAuth2Service) handleClientCredentialsGrant(ctx context.Context, req *d
 	}
 
 	// Store access token in database
-	queries := db2.New(gowk.DB(ctx))
 	tokenExpires := time.Now().Add(time.Duration(expiresIn) * time.Second)
-
-	_, err = queries.CreateOAuth2Token(ctx, db2.CreateOAuth2TokenParams{
+	if _, err := o.getQueries(ctx).CreateOAuth2Token(ctx, db2.CreateOAuth2TokenParams{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 		ClientID:    client.ID,
 		UserID:      0, // No user for client credentials grant
 		Scope:       pgtype.Text{String: req.Scope, Valid: true},
 		Expires:     pgtype.Timestamptz{Time: tokenExpires, Valid: true},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to store access token: %v", err)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to store access token: %w", err)
 	}
 
 	// Build token response
@@ -458,29 +535,45 @@ func (o *OAuth2Service) supportsGrantType(clientGrantTypes string, requiredGrant
 	return false
 }
 
+// RefreshToken 直接以 refresh token 字符串刷新 access token，并轮换 refresh token。
+// 仅作为 service 层兜底入口保留；标准流程请走 handleRefreshTokenGrant。
 func (o *OAuth2Service) RefreshToken(ctx context.Context, refreshToken string) (*dto.OAuth2TokenResponse, error) {
-	// Validate refresh token from database
-	queries := db2.New(gowk.DB(ctx))
-
-	// Get refresh token from database
+	queries := o.getQueries(ctx)
 	token, err := queries.GetOAuth2RefreshToken(ctx, refreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token")
+		return nil, gowk.NewError("invalid refresh token")
 	}
-
-	// Check if refresh token is expired
 	if token.Expires.Time.Before(time.Now()) {
-		return nil, fmt.Errorf("refresh token expired")
+		return nil, gowk.NewError("refresh token expired")
 	}
-
-	// Generate and store new access token (reuse refresh token)
-	accessToken, _, err := o.generateAndStoreTokens(ctx, token.ClientID, token.UserID, token.Scope)
+	if err := o.ensureClientEnabled(ctx, token.ClientID); err != nil {
+		return nil, err
+	}
+	accessTTL, refreshTTL := o.resolveTokenTTL(ctx, token.ClientID)
+	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, accessTTL)
 	if err != nil {
 		return nil, err
 	}
+	newRefreshToken, err := o.generateRefreshToken(ctx, token.ClientID, token.UserID, token.Scope, refreshTTL)
+	if err != nil {
+		return nil, err
+	}
+	if err := queries.RevokeOAuth2RefreshToken(ctx, refreshToken); err != nil {
+		slog.WarnContext(ctx, "revoke old refresh token failed", "client_id", token.ClientID, "err", err)
+	}
+	return o.buildTokenResponse(ctx, accessToken, newRefreshToken, token.Scope, false, 0, "", "")
+}
 
-	// Build response without ID token (refresh token flow doesn't generate ID token)
-	return o.buildTokenResponse(ctx, accessToken, refreshToken, token.Scope, false, 0, "", "")
+// ensureClientEnabled 确保给定 client 存在且未被禁用。仅供不需要 secret 校验的场景使用。
+func (o *OAuth2Service) ensureClientEnabled(ctx context.Context, clientID string) error {
+	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
+	if err != nil {
+		return gowk.NewError("invalid client_id")
+	}
+	if !client.Enabled {
+		return gowk.NewError("client is disabled")
+	}
+	return nil
 }
 
 // ValidateAccessToken validates access token from database
@@ -503,30 +596,25 @@ func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken str
 // SSO Service
 type SSOService struct{}
 
-func (s *SSOService) LoginWithProvider(ctx context.Context, req *dto.SSOLoginRequest) (*dto.SSOLoginResponse, error) {
-	user := db2.AuthUser{
-		ID:       123,
-		Phone:    pgtype.Text{String: "12345678901", Valid: true}, // Default phone
-		Email:    pgtype.Text{String: req.Provider + "@example.com", Valid: true},
-		Nickname: pgtype.Text{String: req.Provider + " User", Valid: true},
-		Group:    pgtype.Text{String: "DEFAULT", Valid: true},
-		Enabled:  true, // Active
-	}
-	// Generate login token
-	token := gowk.GenerateRandomString(64)
+// ErrSSONotImplemented 表示第三方 SSO 登录接口尚未实现。Handler 层应据此返回 501。
+var ErrSSONotImplemented = errors.New("sso login is not implemented")
 
-	return &dto.SSOLoginResponse{
-		Token:    token,
-		UserId:   user.ID,
-		Nickname: user.Nickname.String,
-		Provider: req.Provider,
-	}, nil
+// LoginWithProvider 当前未实现真实的第三方 SSO 登录。
+// 接入真实 provider（Google/GitHub/WeChat 等）时，需要：
+//  1. 使用 provider 的 OAuth2 token endpoint 换取 access_token；
+//  2. 使用该 access_token 调用 provider userinfo 获取唯一身份标识；
+//  3. 在 auth_user 表匹配/建联本地账号，并签发本地会话 token（gowk.Login）。
+// 在未实现前拒绝，避免被滥用签发无主 token。
+func (s *SSOService) LoginWithProvider(ctx context.Context, req *dto.SSOLoginRequest) (*dto.SSOLoginResponse, error) {
+	return nil, ErrSSONotImplemented
 }
 
 // OIDCService OIDC Service
 type OIDCService struct {
+	BaseService
 	mu         sync.RWMutex
 	privateKey *rsa.PrivateKey
+	kid        string // 当前有效的私钥 kid；生成 JWT 时写入 header，使验证方能在 jwks 中匹配公钥
 	keyLoaded  bool
 }
 
@@ -595,16 +683,16 @@ func (o *OIDCService) GenerateIDToken(ctx context.Context, userID int64, clientI
 		Email: userInfo.Email,
 	}
 
-	// Get RSA private key from JWKS
-	privateKey, err := o.getRSAPrivateKey(ctx)
+	privateKey, kid, err := o.getRSAPrivateKey(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get RSA private key: %w", err)
 	}
 
-	// Create JWT header and payload
+	// kid 必填，验证方依赖它定位 jwks 公钥。
 	header := map[string]interface{}{
 		"alg": "RS256",
 		"typ": "JWT",
+		"kid": kid,
 	}
 
 	payload := map[string]interface{}{
@@ -618,14 +706,12 @@ func (o *OIDCService) GenerateIDToken(ctx context.Context, userID int64, clientI
 		"email": idToken.Email,
 	}
 
-	// Encode header and payload
 	headerJSON, _ := json.Marshal(header)
 	payloadJSON, _ := json.Marshal(payload)
 
 	headerEncoded := base64.RawURLEncoding.EncodeToString(headerJSON)
 	payloadEncoded := base64.RawURLEncoding.EncodeToString(payloadJSON)
 
-	// Create signature
 	signingInput := headerEncoded + "." + payloadEncoded
 	hasher := sha256.New()
 	hasher.Write([]byte(signingInput))
@@ -636,79 +722,121 @@ func (o *OIDCService) GenerateIDToken(ctx context.Context, userID int64, clientI
 		return "", fmt.Errorf("failed to sign ID token: %w", err)
 	}
 
-	signatureEncoded := base64.RawURLEncoding.EncodeToString(signature)
-
-	// Combine to create JWT
-	jwtToken := headerEncoded + "." + payloadEncoded + "." + signatureEncoded
-
-	return jwtToken, nil
+	return signingInput + "." + base64.RawURLEncoding.EncodeToString(signature), nil
 }
 
-// getRSAPrivateKey retrieves RSA private key from database JWKs
-func (o *OIDCService) getRSAPrivateKey(ctx context.Context) (*rsa.PrivateKey, error) {
+// getRSAPrivateKey 读取/生成 JWK 私钥，并确保跨重启持久化。
+// 流程：
+//  1. 已加载到内存 → 直接返回；
+//  2. DB 中存在最新 JWK 且含有 private_key → 解 PEM 使用；
+//  3. 否则生成新 RSA-2048 密钥对，写入 DB 并缓存内存。
+//
+// 返回 (privateKey, kid, error)。
+func (o *OIDCService) getRSAPrivateKey(ctx context.Context) (*rsa.PrivateKey, string, error) {
 	o.mu.RLock()
-	if o.keyLoaded && o.privateKey != nil {
+	if o.keyLoaded && o.privateKey != nil && o.kid != "" {
+		key, kid := o.privateKey, o.kid
 		o.mu.RUnlock()
-		return o.privateKey, nil
+		return key, kid, nil
 	}
 	o.mu.RUnlock()
 
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	// Double-check after acquiring write lock
-	if o.keyLoaded && o.privateKey != nil {
-		return o.privateKey, nil
+	if o.keyLoaded && o.privateKey != nil && o.kid != "" {
+		return o.privateKey, o.kid, nil
 	}
 
-	// Get JWKs from database
-	queries := db2.New(gowk.DB(ctx))
-	jwks, err := queries.GetActiveOIDCJwks(ctx)
-	if err != nil {
-		// Generate a new RSA key if no keys exist in database
-		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate RSA key: %w", err)
+	queries := o.getQueries(ctx)
+	if latest, err := queries.GetLatestOIDCJwk(ctx); err == nil && latest.PrivateKey != "" {
+		if key, perr := parseRSAPrivateKeyPEM(latest.PrivateKey); perr == nil {
+			o.privateKey = key
+			o.kid = latest.Kid
+			o.keyLoaded = true
+			return o.privateKey, o.kid, nil
+		} else {
+			slog.WarnContext(ctx, "failed to parse stored JWK private key, generating new one", "err", perr, "kid", latest.Kid)
 		}
-		o.privateKey = privateKey
-		o.keyLoaded = true
-		return privateKey, nil
 	}
 
-	if len(jwks) == 0 {
-		// Generate a new RSA key for testing
-		privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-		}
-		o.privateKey = privateKey
-		o.keyLoaded = true
-		return privateKey, nil
-	}
-
-	// For production, you would decode the private key from database
-	// This is a simplified implementation
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, kid, err := o.createAndStoreJWK(ctx, queries)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
+		return nil, "", err
 	}
-
-	o.privateKey = privateKey
+	o.privateKey = key
+	o.kid = kid
 	o.keyLoaded = true
-	return privateKey, nil
+	return key, kid, nil
 }
 
-func (o *OIDCService) GetJwks() *dto.OIDCJwksResponse {
-	// Get JWKs from database
-	queries := db2.New(gowk.DB(context.Background()))
-	jwks, err := queries.GetActiveOIDCJwks(context.Background())
+// createAndStoreJWK 生成新 RSA 密钥对并将公钥 n/e + PEM 私钥写入 auth_oidc_jwk。
+func (o *OIDCService) createAndStoreJWK(ctx context.Context, queries *db2.Queries) (*rsa.PrivateKey, string, error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		// If database query fails, return empty response
+		return nil, "", fmt.Errorf("failed to generate RSA key: %w", err)
+	}
+	privPEM := encodeRSAPrivateKeyPEM(priv)
+	kid := gowk.GenerateRandomString(16)
+	id := gowk.GenerateRandomString(32)
+
+	n := base64.RawURLEncoding.EncodeToString(priv.N.Bytes())
+	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(priv.E)).Bytes())
+
+	if _, dbErr := queries.CreateOIDCJwk(ctx, db2.CreateOIDCJwkParams{
+		ID:         id,
+		Kid:        kid,
+		Kty:        "RSA",
+		Use:        "sig",
+		Alg:        "RS256",
+		N:          n,
+		E:          e,
+		PrivateKey: privPEM,
+	}); dbErr != nil {
+		// 持久化失败也让服务可用，但警告：下次重启仍会生成新 key，造成 JWT 不可验证；上线前应排查 DB 问题。
+		slog.WarnContext(ctx, "failed to persist JWK to database; using in-memory key only", "err", dbErr, "kid", kid)
+	}
+	return priv, kid, nil
+}
+
+func encodeRSAPrivateKeyPEM(key *rsa.PrivateKey) string {
+	block := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}
+	return string(pem.EncodeToMemory(block))
+}
+
+func parseRSAPrivateKeyPEM(pemStr string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(pemStr))
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block")
+	}
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		k, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		rk, ok := k.(*rsa.PrivateKey)
+		if !ok {
+			return nil, errors.New("stored key is not RSA")
+		}
+		return rk, nil
+	default:
+		return nil, fmt.Errorf("unsupported PEM block type: %s", block.Type)
+	}
+}
+
+// GetJwks 从数据库读取 JWK，只暴露公钥字段（n/e），不暴露 private_key。
+// 使用调用方 ctx，确保查询能被请求级别的取消/超时正确传播。
+func (o *OIDCService) GetJwks(ctx context.Context) *dto.OIDCJwksResponse {
+	jwks, err := o.getQueries(ctx).GetActiveOIDCJwks(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "list jwks failed", "err", err)
 		return &dto.OIDCJwksResponse{Keys: []dto.OIDCJwk{}}
 	}
 
-	// Convert database models to DTO models
-	var keys []dto.OIDCJwk
+	keys := make([]dto.OIDCJwk, 0, len(jwks))
 	for _, jwk := range jwks {
 		keys = append(keys, dto.OIDCJwk{
 			Kty: jwk.Kty,
@@ -719,41 +847,24 @@ func (o *OIDCService) GetJwks() *dto.OIDCJwksResponse {
 			Alg: jwk.Alg,
 		})
 	}
-
 	return &dto.OIDCJwksResponse{Keys: keys}
 }
 
-// isValidPhone validates phone number format
+// isValidPhone 基本中国大陆手机号校验。
 func isValidPhone(phone string) bool {
-	// Basic phone validation - adjust regex based on your requirements
-	matched, _ := regexp.MatchString(`^[1][3-9]\d{9}$`, phone) // Chinese mobile format
+	matched, _ := regexp.MatchString(`^[1][3-9]\d{9}$`, phone)
 	return matched
 }
 
-// isValidClientID validates client ID format
-func isValidClientID(clientID string) bool {
-	// Allow alphanumeric characters, hyphens, and underscores
-	matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, clientID)
-	return matched
-}
-
-// isValidURL validates URL format
-func isValidURL(rawURL string) bool {
-	_, err := url.ParseRequestURI(rawURL)
-	return err == nil
-}
-
-// OAuth2ClientService handles OAuth2 client management
+// OAuth2ClientService handles OAuth2 client management.
+// 不缓存 *db2.Queries：每次调用通过 BaseService.getQueries(ctx) 按需取，
+// 这样零值实例（var s OAuth2ClientService）也能正常工作。
 type OAuth2ClientService struct {
 	BaseService
-	queries *db2.Queries
 }
 
-func NewOAuth2ClientService(ctx context.Context) *OAuth2ClientService {
-	return &OAuth2ClientService{
-		BaseService: BaseService{},
-		queries:     db2.New(gowk.DB(ctx)),
-	}
+func NewOAuth2ClientService(_ context.Context) *OAuth2ClientService {
+	return &OAuth2ClientService{}
 }
 
 // CreateOAuth2Client creates a new OAuth2 client
@@ -806,29 +917,82 @@ func (s *OAuth2ClientService) CreateOAuth2Client(ctx context.Context, params *dt
 	return dto.BuildOAuth2ClientResponse(o), nil
 }
 
-// UpdateOAuth2Client updates an existing OAuth2 client
+// UpdateOAuth2Client 真正将 params 写入数据库；未在 params 中提供的字段保持不变。
+// - 空字符串字段（Name/Secret 等）视为“不修改”；
+// - TTL 字段 <= 0 视为“不修改”；
+// - Enabled 为指针，nil 视为“不修改”，否则显式覆盖。
 func (s *OAuth2ClientService) UpdateOAuth2Client(ctx context.Context, params *dto.OAuth2ClientUpdateParams) (*dto.OAuth2ClientResponse, error) {
-	// Check if client exists
-	_, err := s.GetOAuth2Client(ctx, params.ID)
-	if err != nil {
+	if params == nil || params.ID == "" {
+		return nil, gowk.NewError("client ID is required")
+	}
+	if _, err := s.getQueries(ctx).GetOAuth2Client(ctx, params.ID); err != nil {
 		return nil, gowk.NewError("client not found")
 	}
 
-	// Return placeholder response for now
-	// This would require database query implementation
-	return &dto.OAuth2ClientResponse{
+	redirectURIs, err := marshalJSONArray(params.RedirectURIs)
+	if err != nil {
+		return nil, gowk.NewError("invalid redirect_uris")
+	}
+	scopes, err := marshalJSONArray(params.Scopes)
+	if err != nil {
+		return nil, gowk.NewError("invalid scopes")
+	}
+	grantTypes, err := marshalJSONArray(params.GrantTypes)
+	if err != nil {
+		return nil, gowk.NewError("invalid grant_types")
+	}
+
+	enabled := pgtype.Bool{}
+	if params.Enabled != nil {
+		enabled.Bool = *params.Enabled
+		enabled.Valid = true
+	}
+
+	updated, err := s.getQueries(ctx).UpdateOAuth2Client(ctx, db2.UpdateOAuth2ClientParams{
 		ID:              params.ID,
 		Name:            params.Name,
 		Secret:          params.Secret,
-		RedirectURIs:    `["http://localhost:8080/callback"]`,
-		Scopes:          `["openid", "profile"]`,
-		GrantTypes:      `["authorization_code", "refresh_token"]`,
-		AccessTokenTTL:  3600,
-		RefreshTokenTTL: 2592000,
-		Created:         time.Now().Format(time.RFC3339),
-		Updated:         time.Now().Format(time.RFC3339),
-		Enabled:         true, // true = active
-	}, nil
+		RedirectUris:    redirectURIs,
+		Scopes:          scopes,
+		GrantTypes:      grantTypes,
+		AccessTokenTtl:  params.AccessTokenTTL,
+		RefreshTokenTtl: params.RefreshTokenTTL,
+		Enabled:         enabled,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("update oauth2 client: %w", err)
+	}
+	return dto.BuildOAuth2ClientResponse(updated), nil
+}
+
+// RegenerateClientSecret 为指定 client 生成新 secret 并落库，返回更新后的 client 响应。
+func (s *OAuth2ClientService) RegenerateClientSecret(ctx context.Context, clientID, newSecret string) (*dto.OAuth2ClientResponse, error) {
+	if clientID == "" {
+		return nil, gowk.NewError("client ID is required")
+	}
+	if newSecret == "" {
+		return nil, gowk.NewError("new secret is required")
+	}
+	updated, err := s.getQueries(ctx).UpdateOAuth2ClientSecret(ctx, db2.UpdateOAuth2ClientSecretParams{
+		ID:     clientID,
+		Secret: newSecret,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("regenerate client secret: %w", err)
+	}
+	return dto.BuildOAuth2ClientResponse(updated), nil
+}
+
+// marshalJSONArray 将字符串切片序列化为 JSON；切片为空（nil / len 0）时返回空串以触发 SQL 侧的 NULLIF 不覆盖语义。
+func marshalJSONArray(items []string) (string, error) {
+	if len(items) == 0 {
+		return "", nil
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // DeleteOAuth2Client soft deletes an OAuth2 client (sets status to disabled)
@@ -857,7 +1021,7 @@ func (s *OAuth2ClientService) ListOAuth2Clients(ctx context.Context) ([]*dto.OAu
 	if err != nil {
 		return nil, err
 	}
-	res := make([]*dto.OAuth2ClientResponse, len(os))
+	res := make([]*dto.OAuth2ClientResponse, 0, len(os))
 	for _, o := range os {
 		res = append(res, dto.BuildOAuth2ClientResponse(o))
 	}

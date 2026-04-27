@@ -39,8 +39,7 @@ func OAuth2TokenMiddleware(ctx *gin.Context) {
 
 // AdminMiddleware checks if the user has admin privileges
 func AdminMiddleware(ctx *gin.Context) {
-	// Get user ID from context (should be set by OAuth2TokenMiddleware)
-	userIDInterface, exists := ctx.Get("user_id")
+	userIDInterface, exists := ctx.Get(constant.ContextUserID)
 	if !exists {
 		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("User not authenticated"))
 		return
@@ -52,7 +51,6 @@ func AdminMiddleware(ctx *gin.Context) {
 		return
 	}
 
-	// Get user from database to check admin status
 	var userService service.UserService
 	user, err := userService.GetById(ctx, userID)
 	if err != nil {
@@ -60,14 +58,12 @@ func AdminMiddleware(ctx *gin.Context) {
 		return
 	}
 
-	// Check if user is admin (assuming admin users have a specific group or status)
-	// For now, we'll check if user belongs to "admin" group
-	if user.Group.String != "admin" {
+	// 不区分大小写：历史数据可能写入 lower-case，避免误拦截。
+	if !strings.EqualFold(user.Group.String, constant.USER_GROUP_ADMIN) {
 		gowk.Response(ctx, http.StatusForbidden, nil, gowk.NewError("Admin access required"))
 		return
 	}
 
-	// Store admin status in context
 	constant.StoreContextAdmin(ctx, true)
 	ctx.Next()
 }

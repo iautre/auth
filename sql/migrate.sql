@@ -51,4 +51,36 @@ BEGIN
     ALTER TABLE public.oidc_jwk RENAME TO auth_oidc_jwk;
     RAISE NOTICE 'Renamed: oidc_jwk → auth_oidc_jwk';
   END IF;
+
+  -- 为已有 auth_oidc_jwk 补齐 private_key 列（存 PEM 私钥，用于跨重启持久化 RSA 密钥对）
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='auth_oidc_jwk')
+     AND NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='auth_oidc_jwk' AND column_name='private_key'
+     )
+  THEN
+    ALTER TABLE public.auth_oidc_jwk ADD COLUMN private_key text NOT NULL DEFAULT '';
+    RAISE NOTICE 'Added column: auth_oidc_jwk.private_key';
+  END IF;
+
+  -- 为已有 auth_oauth2_authorization_code 补齐 PKCE 列
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='auth_oauth2_authorization_code')
+     AND NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='auth_oauth2_authorization_code' AND column_name='code_challenge'
+     )
+  THEN
+    ALTER TABLE public.auth_oauth2_authorization_code ADD COLUMN code_challenge text;
+    RAISE NOTICE 'Added column: auth_oauth2_authorization_code.code_challenge';
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='auth_oauth2_authorization_code')
+     AND NOT EXISTS (
+       SELECT 1 FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='auth_oauth2_authorization_code' AND column_name='code_challenge_method'
+     )
+  THEN
+    ALTER TABLE public.auth_oauth2_authorization_code ADD COLUMN code_challenge_method varchar;
+    RAISE NOTICE 'Added column: auth_oauth2_authorization_code.code_challenge_method';
+  END IF;
 END $$;

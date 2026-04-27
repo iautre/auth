@@ -2,8 +2,10 @@ package util
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha1"
 	"encoding/base32"
+	"fmt"
 	"strconv"
 	"time"
 )
@@ -58,12 +60,19 @@ func (o *OTP) ToUint32(bytes []byte) uint32 {
 	return (uint32(bytes[0]) << 24) + (uint32(bytes[1]) << 16) + (uint32(bytes[2]) << 8) + uint32(bytes[3])
 }
 
-// generateOTPSecret generates a new OTP secret key
-func GenerateOTPSecret() string {
-	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
-	result := make([]byte, 16)
-	for i := range result {
-		result[i] = chars[i%len(chars)] // Simple pattern for now
+// GenerateOTPSecret 生成符合 RFC 4648 base32 字母表的 16 字符随机 OTP 秘钥。
+// 使用 crypto/rand 保证随机性，满足 Google Authenticator 等兼容应用。
+// crypto/rand 失败概率极低，但仍以 error 返回，避免单个请求崩掉整个 gin goroutine。
+func GenerateOTPSecret() (string, error) {
+	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567" // RFC 4648 base32
+	const length = 16
+	randomBytes := make([]byte, length)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", fmt.Errorf("read crypto/rand: %w", err)
 	}
-	return string(result)
+	result := make([]byte, length)
+	for i, b := range randomBytes {
+		result[i] = chars[int(b)%len(chars)]
+	}
+	return string(result), nil
 }

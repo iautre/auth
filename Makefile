@@ -5,7 +5,7 @@ SERVER    := root@upload.autre.cn
 HTTP_PORT := 8087
 GRPC_PORT := 50051
 
-.PHONY: proto sqlc generate clean build help deploy restart logs stop migrate
+.PHONY: proto sqlc generate clean build build-image help deploy restart logs stop migrate run run-custom install-tools check-tools
 
 # Default target
 help:
@@ -67,11 +67,17 @@ check-tools:
 	@command -v protoc-gen-go-grpc >/dev/null 2>&1 && echo "✅ protoc-gen-go-grpc found" || echo "❌ protoc-gen-go-grpc not found"
 	@command -v sqlc >/dev/null 2>&1 && echo "✅ sqlc found" || echo "❌ sqlc not found"
 
-# Build combined server
+# Build combined server (main 位于仓库根目录 main.go)
 build:
 	@echo "Building combined HTTP/gRPC server..."
-	go build -o bin/server ./cmd
+	go build -o bin/server .
 	@echo "✅ Build completed! Binary: bin/server"
+
+# Build docker image (由 deploy 目标调用)
+build-image:
+	@echo "Building docker image $(IMAGE):latest..."
+	docker build -t $(IMAGE):latest .
+	@echo "✅ Image built: $(IMAGE):latest"
 
 # Run combined server
 run: build

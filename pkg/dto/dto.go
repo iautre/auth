@@ -55,12 +55,15 @@ type PasswordResetParams struct {
 
 // OAuth2 DTOs
 type OAuth2AuthRequest struct {
-	ResponseType string `json:"response_type" form:"response_type" binding:"required,oneof=code"`
-	ClientID     string `json:"client_id" form:"client_id" binding:"required,min=1,max=100"`
-	RedirectURI  string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
-	Scope        string `json:"scope" form:"scope" binding:"required,min=1,max=500"`
-	State        string `json:"state" form:"state" binding:"omitempty,max=100"`
-	Nonce        string `json:"nonce" form:"nonce" binding:"omitempty,max=100"`
+	ResponseType        string `json:"response_type" form:"response_type" binding:"required,oneof=code"`
+	ClientID            string `json:"client_id" form:"client_id" binding:"required,min=1,max=100"`
+	RedirectURI         string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
+	Scope               string `json:"scope" form:"scope" binding:"required,min=1,max=500"`
+	State               string `json:"state" form:"state" binding:"omitempty,max=100"`
+	Nonce               string `json:"nonce" form:"nonce" binding:"omitempty,max=100"`
+	// PKCE (RFC 7636)：public client 应当强制传入；S256 推荐，plain 仅作兼容。
+	CodeChallenge       string `json:"code_challenge,omitempty" form:"code_challenge" binding:"omitempty,min=43,max=128"`
+	CodeChallengeMethod string `json:"code_challenge_method,omitempty" form:"code_challenge_method" binding:"omitempty,oneof=S256 plain"`
 }
 
 type OAuth2TokenRequest struct {
@@ -129,7 +132,8 @@ type OAuth2ClientUpdateParams struct {
 	Secret          string   `json:"secret,omitempty" binding:"omitempty,min=16,max=128"`
 	RedirectURIs    []string `json:"redirect_uris,omitempty" binding:"omitempty,min=1"`
 	Scopes          []string `json:"scopes,omitempty" binding:"omitempty,min=1"`
-	Enable          bool     `json:"enable,omitempty"`
+	// 用指针以区分"未传入"与"显式 false"——未传入时保持库内值不变。
+	Enabled         *bool    `json:"enabled,omitempty"`
 	GrantTypes      []string `json:"grant_types,omitempty" binding:"omitempty,min=1"`
 	AccessTokenTTL  int64    `json:"access_token_ttl,omitempty" binding:"omitempty,min=300"`
 	RefreshTokenTTL int64    `json:"refresh_token_ttl,omitempty" binding:"omitempty,min=3600"`
@@ -137,7 +141,8 @@ type OAuth2ClientUpdateParams struct {
 
 // SSO DTOs
 type SSOLoginRequest struct {
-	Provider    string `json:"provider" form:"provider" binding:"required,oneof=google github wechat"`
+	// Provider 仅要求非空，具体 provider 合法性由服务端自行校验，避免后续新增时需要同步修改 binding tag。
+	Provider    string `json:"provider" form:"provider" binding:"required,min=1,max=32"`
 	Token       string `json:"token" form:"token" binding:"required,min=10,max=1000"`
 	RedirectURI string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
 	State       string `json:"state" form:"state" binding:"omitempty,max=100"`

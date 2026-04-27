@@ -40,17 +40,20 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_client
 );
 
 -- OAuth2 Authorization Codes Table
+-- code_challenge / code_challenge_method 用于 PKCE（RFC 7636），public client 必填，confidential client 可选。
 CREATE TABLE IF NOT EXISTS public.auth_oauth2_authorization_code
 (
-    code         varchar PRIMARY KEY,
-    client_id    varchar NOT NULL,
-    user_id      bigint NOT NULL,
-    redirect_uri text,
-    scope        text,
-    state        text,
-    nonce        text,
-    expires      timestamp with time zone NOT NULL,
-    created      timestamp with time zone NOT NULL DEFAULT now(),
+    code                  varchar PRIMARY KEY,
+    client_id             varchar NOT NULL,
+    user_id               bigint NOT NULL,
+    redirect_uri          text,
+    scope                 text,
+    state                 text,
+    nonce                 text,
+    code_challenge        text,
+    code_challenge_method varchar,
+    expires               timestamp with time zone NOT NULL,
+    created               timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT auth_oauth2_authorization_code_client_id_fkey
         FOREIGN KEY (client_id) REFERENCES public.auth_oauth2_client (id) ON DELETE CASCADE
 );
@@ -83,17 +86,19 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_refresh_token
 );
 
 -- OIDC JWK Keys Table
+-- private_key 存储 PKCS#1 PEM 私钥，用于服务端签名；对外 /oidc/jwks 仅暴露 n/e。
 CREATE TABLE IF NOT EXISTS public.auth_oidc_jwk
 (
-    id      varchar PRIMARY KEY,
-    kid     varchar NOT NULL UNIQUE,
-    kty     varchar NOT NULL,
-    use     varchar NOT NULL,
-    alg     varchar NOT NULL,
-    n       text NOT NULL,
-    e       text NOT NULL,
-    created timestamp with time zone NOT NULL DEFAULT now(),
-    updated timestamp with time zone NOT NULL DEFAULT now()
+    id          varchar PRIMARY KEY,
+    kid         varchar NOT NULL UNIQUE,
+    kty         varchar NOT NULL,
+    use         varchar NOT NULL,
+    alg         varchar NOT NULL,
+    n           text NOT NULL,
+    e           text NOT NULL,
+    private_key text NOT NULL DEFAULT '',
+    created     timestamp with time zone NOT NULL DEFAULT now(),
+    updated     timestamp with time zone NOT NULL DEFAULT now()
 );
 
 -- Indexes

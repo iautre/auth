@@ -13,17 +13,39 @@ WHERE id = $1;
 UPDATE public.auth_oauth2_client set enabled = false
 WHERE id = $1;
 
+-- name: UpdateOAuth2Client :one
+-- 传空字符串/0 的列不变，仅覆盖显式指定的字段；enabled 仅在显式提供（非 NULL）时覆盖。
+UPDATE public.auth_oauth2_client
+SET name              = COALESCE(NULLIF(sqlc.arg(name)::varchar, ''), name),
+    secret            = COALESCE(NULLIF(sqlc.arg(secret)::varchar, ''), secret),
+    redirect_uris     = COALESCE(NULLIF(sqlc.arg(redirect_uris)::text, ''), redirect_uris),
+    scopes            = COALESCE(NULLIF(sqlc.arg(scopes)::text, ''), scopes),
+    grant_types       = COALESCE(NULLIF(sqlc.arg(grant_types)::text, ''), grant_types),
+    access_token_ttl  = CASE WHEN sqlc.arg(access_token_ttl)::bigint > 0 THEN sqlc.arg(access_token_ttl)::bigint ELSE access_token_ttl END,
+    refresh_token_ttl = CASE WHEN sqlc.arg(refresh_token_ttl)::bigint > 0 THEN sqlc.arg(refresh_token_ttl)::bigint ELSE refresh_token_ttl END,
+    enabled           = COALESCE(sqlc.narg(enabled)::boolean, enabled),
+    updated           = NOW()
+WHERE id = sqlc.arg(id)
+RETURNING id, name, secret, redirect_uris, scopes, grant_types, access_token_ttl, refresh_token_ttl, enabled, created, updated;
+
+-- name: UpdateOAuth2ClientSecret :one
+UPDATE public.auth_oauth2_client
+SET secret  = $2,
+    updated = NOW()
+WHERE id = $1
+RETURNING id, name, secret, redirect_uris, scopes, grant_types, access_token_ttl, refresh_token_ttl, enabled, created, updated;
+
 -- name: ListOAuth2Client :many
 SELECT id, name, secret, redirect_uris, scopes, grant_types, access_token_ttl, refresh_token_ttl, enabled, created, updated
 FROM public.auth_oauth2_client;
 
 -- name: CreateOAuth2AuthorizationCode :one
-INSERT INTO public.auth_oauth2_authorization_code (code, client_id, user_id, redirect_uri, scope, state, nonce, expires, created)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, expires, created;
+INSERT INTO public.auth_oauth2_authorization_code (code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created;
 
 -- name: GetOAuth2AuthorizationCode :one
-SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, expires, created
+SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created
 FROM public.auth_oauth2_authorization_code
 WHERE code = $1 AND expires > NOW();
 
@@ -98,16 +120,27 @@ WHERE c.id = $1
 GROUP BY c.id, c.name;
 
 -- name: GetOIDCJwk :one
-SELECT id, kid, kty, use, alg, n, e, created, updated
+SELECT id, kid, kty, use, alg, n, e, private_key, created, updated
 FROM public.auth_oidc_jwk
 WHERE kid = $1;
 
 -- name: ListOIDCJwks :many
-SELECT id, kid, kty, use, alg, n, e, created, updated
+SELECT id, kid, kty, use, alg, n, e, private_key, created, updated
 FROM public.auth_oidc_jwk
 ORDER BY created DESC;
 
 -- name: GetActiveOIDCJwks :many
-SELECT id, kid, kty, use, alg, n, e, created, updated
+SELECT id, kid, kty, use, alg, n, e, private_key, created, updated
 FROM public.auth_oidc_jwk
 ORDER BY created DESC;
+
+-- name: GetLatestOIDCJwk :one
+SELECT id, kid, kty, use, alg, n, e, private_key, created, updated
+FROM public.auth_oidc_jwk
+ORDER BY created DESC
+LIMIT 1;
+
+-- name: CreateOIDCJwk :one
+INSERT INTO public.auth_oidc_jwk (id, kid, kty, use, alg, n, e, private_key)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, kid, kty, use, alg, n, e, private_key, created, updated;
