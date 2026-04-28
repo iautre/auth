@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/iautre/auth/internal/service"
+	"github.com/iautre/auth/pkg/constant"
 	"github.com/iautre/auth/pkg/dto"
 	authpb "github.com/iautre/auth/pkg/proto"
 	"github.com/iautre/gowk"
@@ -41,8 +43,8 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 	}
 
 	// 签发 JWT（RS256），其他服务凭 JWKS 公钥本地验证，无需 Redis 或 gRPC
-	var oidcService service.OIDCService
-	jwtToken, err := oidcService.GenerateIDToken(ctx, user.ID, "auth", "")
+	// /login 不走 OAuth2，沿用全量 claim（scope 传空字符串）。
+	jwtToken, err := service.DefaultOIDCService().GenerateIDToken(ctx, user.ID, "auth", "", "", service.DefaultAccessTokenTTL())
 	if err != nil {
 		gowk.Response(ctx, http.StatusInternalServerError, nil, err)
 		return
@@ -151,7 +153,11 @@ func (u *UserHandler) SSOLogin(ctx *gin.Context) {
 
 // ResetOTPCode generates new OTP secret for user (admin only)
 func (u *UserHandler) ResetOTPCode(ctx *gin.Context) {
-	userId := gowk.LoginId(ctx)
+	userId, err := strconv.ParseInt(ctx.Param("userId"), 10, 64)
+	if err != nil || userId <= 0 {
+		gowk.Response(ctx, http.StatusBadRequest, nil, gowk.NewError("invalid user ID"))
+		return
+	}
 	var userService service.UserService
 	newSecret, err := userService.ResetOTPCode(ctx, userId)
 	if err != nil {
@@ -174,7 +180,7 @@ type OAuth2Handler struct {
 func NewOAuth2Handler(ctx context.Context) *OAuth2Handler {
 	return &OAuth2Handler{
 		oauth2Service: service.NewOAuth2Service(ctx),
-		oidcService:   &service.OIDCService{},
+		oidcService:   service.DefaultOIDCService(),
 	}
 }
 
@@ -260,8 +266,9 @@ func (o *OAuth2Handler) OIDCDiscovery(ctx *gin.Context) {
 }
 
 func (o *OAuth2Handler) OIDCUserInfo(ctx *gin.Context) {
-	// Get user ID from OAuth2TokenMiddleware
-	userIDInterface, exists := ctx.Get("user_id")
+	// 与 OAuth2TokenMiddleware 写入键保持一致；裸字符串 "user_id" 容易跟 constant 漂移，
+	// 一旦键改名静默拿不到 userID 就会全场 401，统一走常量。
+	userIDInterface, exists := ctx.Get(constant.ContextUserID)
 	if !exists {
 		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("User ID not found in context"))
 		return
@@ -295,7 +302,7 @@ type GrpcHandler struct {
 func NewGrpcHandler(ctx context.Context) *GrpcHandler {
 	return &GrpcHandler{
 		oauth2Service: service.NewOAuth2Service(ctx),
-		oidcService:   &service.OIDCService{},
+		oidcService:   service.DefaultOIDCService(),
 	}
 }
 
@@ -485,6 +492,7 @@ func (g *GrpcHandler) Login(ctx context.Context, req *authpb.LoginRequest) (*aut
 	t := nativeToken{
 		Value:     tokenValue,
 		LoginId:   user.ID,
+		Device:    req.Device,
 		Timeout:   nativeTokenTTL,
 		CreatedAt: time.Now().Unix(),
 	}

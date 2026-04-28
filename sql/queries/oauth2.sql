@@ -49,8 +49,10 @@ SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, code_challen
 FROM public.auth_oauth2_authorization_code
 WHERE code = $1 AND expires > NOW();
 
--- name: DeleteOAuth2AuthorizationCode :exec
-DELETE FROM public.auth_oauth2_authorization_code WHERE code = $1;
+-- name: ConsumeOAuth2AuthorizationCode :one
+DELETE FROM public.auth_oauth2_authorization_code
+WHERE code = $1 AND client_id = $2 AND expires > NOW()
+RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created;
 
 -- name: CleanupExpiredAuthorizationCodes :exec
 DELETE FROM public.auth_oauth2_authorization_code WHERE expires <= NOW();

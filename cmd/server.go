@@ -13,6 +13,8 @@ import (
 	"github.com/iautre/auth/internal/route"
 	authpb "github.com/iautre/auth/pkg/proto"
 	"github.com/iautre/gowk"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 // getEnvOrDefault returns environment variable value or default
@@ -44,7 +46,12 @@ func Run() {
 	apiGroup.POST("/login", userHandler.Login)
 	route.Router(apiGroup)
 
-	grpcServer := gowk.NewGrpcServer()
+	server := grpc.NewServer(
+		grpc.UnaryInterceptor(handler.ServiceTokenUnaryInterceptor(config.AuthGRPCToken())),
+		grpc.StreamInterceptor(handler.ServiceTokenStreamInterceptor(config.AuthGRPCToken())),
+	)
+	reflection.Register(server)
+	grpcServer := &gowk.GrpcServer{Server: server}
 	authServer := handler.NewAuthServiceServer(context.Background())
 	authpb.RegisterAuthServiceServer(grpcServer.Server, authServer)
 
@@ -60,10 +67,12 @@ func Run() {
 		})
 	})
 
+	// 用闭包捕获 *grpcPort，以便 --grpc-port 或 GRPC_SERVER_ADDR 改动时
+	// 健康检查返回的也是真实生效的端口，而不是写死的 50051。
 	r.GET("/grpc-status", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"status": "ok",
-			"port":   "50051",
+			"port":   *grpcPort,
 		})
 	})
 

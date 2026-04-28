@@ -41,6 +41,14 @@ func OAuth2TokenMiddleware(ctx *gin.Context) {
 func AdminMiddleware(ctx *gin.Context) {
 	userIDInterface, exists := ctx.Get(constant.ContextUserID)
 	if !exists {
+		userID := gowk.LoginId(ctx)
+		if userID > 0 {
+			userIDInterface = userID
+			exists = true
+			ctx.Set(constant.ContextUserID, userID)
+		}
+	}
+	if !exists {
 		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("User not authenticated"))
 		return
 	}

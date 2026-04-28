@@ -55,12 +55,12 @@ type PasswordResetParams struct {
 
 // OAuth2 DTOs
 type OAuth2AuthRequest struct {
-	ResponseType        string `json:"response_type" form:"response_type" binding:"required,oneof=code"`
-	ClientID            string `json:"client_id" form:"client_id" binding:"required,min=1,max=100"`
-	RedirectURI         string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
-	Scope               string `json:"scope" form:"scope" binding:"required,min=1,max=500"`
-	State               string `json:"state" form:"state" binding:"omitempty,max=100"`
-	Nonce               string `json:"nonce" form:"nonce" binding:"omitempty,max=100"`
+	ResponseType string `json:"response_type" form:"response_type" binding:"required,oneof=code"`
+	ClientID     string `json:"client_id" form:"client_id" binding:"required,min=1,max=100"`
+	RedirectURI  string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
+	Scope        string `json:"scope" form:"scope" binding:"required,min=1,max=500"`
+	State        string `json:"state" form:"state" binding:"omitempty,max=100"`
+	Nonce        string `json:"nonce" form:"nonce" binding:"omitempty,max=100"`
 	// PKCE (RFC 7636)：public client 应当强制传入；S256 推荐，plain 仅作兼容。
 	CodeChallenge       string `json:"code_challenge,omitempty" form:"code_challenge" binding:"omitempty,min=43,max=128"`
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty" form:"code_challenge_method" binding:"omitempty,oneof=S256 plain"`
@@ -91,7 +91,7 @@ type OAuth2TokenResponse struct {
 type OAuth2ClientResponse struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
-	Secret          string `json:"secret"`
+	Secret          string `json:"secret,omitempty"`
 	RedirectURIs    string `json:"redirect_uris"`
 	Scopes          string `json:"scopes"`
 	GrantTypes      string `json:"grant_types"`
@@ -103,10 +103,18 @@ type OAuth2ClientResponse struct {
 }
 
 func BuildOAuth2ClientResponse(client db.AuthOauth2Client) *OAuth2ClientResponse {
+	return BuildOAuth2ClientResponseWithSecret(client, false)
+}
+
+func BuildOAuth2ClientResponseWithSecret(client db.AuthOauth2Client, includeSecret bool) *OAuth2ClientResponse {
+	secret := ""
+	if includeSecret {
+		secret = client.Secret
+	}
 	return &OAuth2ClientResponse{
 		ID:              client.ID,
 		Name:            client.Name,
-		Secret:          client.Secret,
+		Secret:          secret,
 		RedirectURIs:    client.RedirectUris,
 		Scopes:          client.Scopes,
 		GrantTypes:      client.GrantTypes,
@@ -127,11 +135,11 @@ type OAuth2ClientCreateParams struct {
 }
 
 type OAuth2ClientUpdateParams struct {
-	ID              string   `json:"id" binding:"required"`
-	Name            string   `json:"name,omitempty" binding:"omitempty,min=2,max=100"`
-	Secret          string   `json:"secret,omitempty" binding:"omitempty,min=16,max=128"`
-	RedirectURIs    []string `json:"redirect_uris,omitempty" binding:"omitempty,min=1"`
-	Scopes          []string `json:"scopes,omitempty" binding:"omitempty,min=1"`
+	ID           string   `json:"id" binding:"required"`
+	Name         string   `json:"name,omitempty" binding:"omitempty,min=2,max=100"`
+	Secret       string   `json:"secret,omitempty" binding:"omitempty,min=16,max=128"`
+	RedirectURIs []string `json:"redirect_uris,omitempty" binding:"omitempty,min=1"`
+	Scopes       []string `json:"scopes,omitempty" binding:"omitempty,min=1"`
 	// 用指针以区分"未传入"与"显式 false"——未传入时保持库内值不变。
 	Enabled         *bool    `json:"enabled,omitempty"`
 	GrantTypes      []string `json:"grant_types,omitempty" binding:"omitempty,min=1"`
@@ -201,16 +209,22 @@ type OIDCUserInfo struct {
 	UpdatedAt         int64        `json:"updated_at,omitempty"`
 }
 
+// OIDCIDToken 描述 ID Token 中常见 claim 的字段集合。
+// 实际签发由 OIDCService.GenerateIDToken 直接基于 map 编码（按 scope 选字段），
+// 这里仅供文档/解析方使用，标准字段名遵循 OIDC Core 1.0 §2、§5.4。
 type OIDCIDToken struct {
-	Iss   string `json:"iss"`
-	Sub   string `json:"sub"`
-	Aud   string `json:"aud"`
-	Exp   int64  `json:"exp"`
-	Iat   int64  `json:"iat"`
-	Nonce string `json:"nonce,omitempty"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	Phone string `json:"phone"`
+	Iss                 string `json:"iss"`
+	Sub                 string `json:"sub"`
+	Aud                 string `json:"aud"`
+	Exp                 int64  `json:"exp"`
+	Iat                 int64  `json:"iat"`
+	Nonce               string `json:"nonce,omitempty"`
+	Name                string `json:"name,omitempty"`
+	PreferredUsername   string `json:"preferred_username,omitempty"`
+	Email               string `json:"email,omitempty"`
+	EmailVerified       bool   `json:"email_verified,omitempty"`
+	PhoneNumber         string `json:"phone_number,omitempty"`
+	PhoneNumberVerified bool   `json:"phone_number_verified,omitempty"`
 }
 
 type OIDCJwksResponse struct {

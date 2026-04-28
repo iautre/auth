@@ -196,7 +196,7 @@ func remoteDoLogin(c *authclient.AuthClient) func(*gin.Context) (string, int64, 
 		if err := ctx.ShouldBind(&params); err != nil {
 			return "", 0, "", err
 		}
-		resp, err := c.Login(ctx.Request.Context(), params.Account, params.Code)
+		resp, err := c.Login(ctx.Request.Context(), params.Account, params.Code, ctx.GetHeader("User-Agent"))
 		if err != nil {
 			return "", 0, "", err
 		}

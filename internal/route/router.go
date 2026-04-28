@@ -26,13 +26,18 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	// 注意：/login 由调用方（cmd 独立部署 或 embed.Setup）统一注册，
 	// 避免与 embed.Setup 外层注册冲突导致 gin 重复注册 panic。
 	ro.GET("/user/info", gowk.CheckLogin, u.UserInfo)
-	ro.POST("/sso/login", u.SSOLogin)
+	// /sso/login 当前 service 层直接返回 ErrSSONotImplemented，没有任何 provider 接入，
+	// 路由暴露反而误导上游。等真正落地某个第三方 IDP 时再注册回来。
 
 	// Admin endpoints (require admin middleware)
 	ro.POST("/user/:userId/reset-otp", gowk.CheckLogin, handler.AdminMiddleware, u.ResetOTPCode)
 
 	// OAuth2 endpoints
-	ro.GET("/oauth2/auth", gowk.CheckLogin, u.BasicAuthMiddleware, o.OAuth2Auth)
+	// /oauth2/auth 仅依赖 gowk.CheckLogin 鉴权；BasicAuthMiddleware 在 auth 项目中
+	// 没有注册任何 SetBasicAuthValidator，validateBasicAuth 在缺凭据时直接 nil 放行，
+	// 一旦上面的 CheckLogin 也按 cookie/bearer/basic 不严格执行，就会出现"无主码"。
+	// 风险通过 OAuth2Auth handler 中 LoginId<=0 拦截兜底，这里不再叠 BasicAuth 中间件。
+	ro.GET("/oauth2/auth", gowk.CheckLogin, o.OAuth2Auth)
 	ro.POST("/oauth2/token", o.OAuth2Token)
 
 	// OIDC endpoints

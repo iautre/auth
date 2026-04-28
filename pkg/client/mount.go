@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
 )
 
@@ -34,16 +35,9 @@ func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 
 	// ── OAuth2 / OIDC（无需 token） ────────────────────────────────────────
 	g.POST("/oauth2/token", func(ctx *gin.Context) {
-		var params struct {
-			GrantType    string `form:"grant_type" binding:"required"`
-			Code         string `form:"code"`
-			RedirectURI  string `form:"redirect_uri"`
-			ClientID     string `form:"client_id"`
-			ClientSecret string `form:"client_secret"`
-			RefreshToken string `form:"refresh_token"`
-			Scope        string `form:"scope"`
-			CodeVerifier string `form:"code_verifier"`
-		}
+		// 共用 dto.OAuth2TokenRequest 校验规则；之前现场再写一份匿名 struct，
+		// 一旦 dto 演进（如新增 PKCE 字段）就有概率漂移漏掉。
+		var params dto.OAuth2TokenRequest
 		if err := ctx.ShouldBind(&params); err != nil {
 			gowk.Response(ctx, http.StatusBadRequest, nil, err)
 			return

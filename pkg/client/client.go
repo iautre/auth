@@ -8,15 +8,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/iautre/auth/pkg/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+const grpcServiceTokenHeader = "x-auth-service-token"
 
 // grpcMsg 从 gRPC 错误中提取人类可读的 message，去掉 "rpc error: code = ... desc = " 前缀。
 func grpcMsg(err error) error {
@@ -36,7 +40,11 @@ type AuthClient struct {
 
 // NewAuthClient 创建OAuth2客户端
 func NewAuthClient(addr, clientID, secret string) (*AuthClient, error) {
-	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(
+		addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithUnaryInterceptor(serviceTokenUnaryClientInterceptor(os.Getenv("AUTH_GRPC_TOKEN"))),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to auth service: %v", err)
 	}
@@ -49,6 +57,15 @@ func NewAuthClient(addr, clientID, secret string) (*AuthClient, error) {
 		clientID:   clientID,
 		secret:     secret,
 	}, nil
+}
+
+func serviceTokenUnaryClientInterceptor(token string) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if token != "" {
+			ctx = metadata.AppendToOutgoingContext(ctx, grpcServiceTokenHeader, token)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 // OAuth2Token 交换访问令牌
@@ -396,19 +413,10 @@ func (c *AuthClient) parseAndValidateClaims(idToken string) (*proto.OIDCUserInfo
 	return userInfo, nil
 }
 
-// base64Decode 安全的base64解码
+// base64Decode 解码 JWT 各段。JWT/JWS（RFC 7515 §2）规定使用 base64url 且不带 padding，
+// 直接走 RawURLEncoding 即可，避免手动替换 - / _ 再补 = 的小作坊式实现。
 func base64Decode(data string) ([]byte, error) {
-	// 替换URL安全的base64字符
-	data = strings.ReplaceAll(data, "-", "+")
-	data = strings.ReplaceAll(data, "_", "/")
-
-	// 补齐padding
-	if len(data)%4 != 0 {
-		data += strings.Repeat("=", 4-len(data)%4)
-	}
-
-	// Base64解码
-	return base64.StdEncoding.DecodeString(data)
+	return base64.RawURLEncoding.DecodeString(strings.TrimRight(data, "="))
 }
 
 // OIDCJwks 获取JWKS公钥
@@ -455,8 +463,9 @@ func (c *AuthClient) GetUserInfo(ctx context.Context, userID int64) (*proto.GetU
 }
 
 // Login 通过 gRPC 调用 auth 服务完成登录，返回 gowk token 和用户基本信息。
-func (c *AuthClient) Login(ctx context.Context, account, code string) (*proto.LoginResponse, error) {
-	resp, err := c.authClient.Login(ctx, &proto.LoginRequest{Account: account, Code: code})
+// device 一般传 HTTP User-Agent，用于审计 / 多端登录展示；可为空。
+func (c *AuthClient) Login(ctx context.Context, account, code, device string) (*proto.LoginResponse, error) {
+	resp, err := c.authClient.Login(ctx, &proto.LoginRequest{Account: account, Code: code, Device: device})
 	if err != nil {
 		return nil, grpcMsg(err)
 	}
