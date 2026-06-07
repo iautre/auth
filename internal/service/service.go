@@ -940,7 +940,7 @@ func (s *OAuth2ClientService) CreateOAuth2Client(ctx context.Context, params *dt
 	if err != nil {
 		return nil, err
 	}
-	return dto.BuildOAuth2ClientResponseWithSecret(o, true), nil
+	return buildOAuth2ClientResponseWithSecret(o, true), nil
 }
 
 // UpdateOAuth2Client 真正将 params 写入数据库；未在 params 中提供的字段保持不变。
@@ -988,7 +988,7 @@ func (s *OAuth2ClientService) UpdateOAuth2Client(ctx context.Context, params *dt
 	if err != nil {
 		return nil, fmt.Errorf("update oauth2 client: %w", err)
 	}
-	return dto.BuildOAuth2ClientResponse(updated), nil
+	return buildOAuth2ClientResponse(updated), nil
 }
 
 // RegenerateClientSecret 为指定 client 生成新 secret 并落库，返回更新后的 client 响应。
@@ -1006,7 +1006,7 @@ func (s *OAuth2ClientService) RegenerateClientSecret(ctx context.Context, client
 	if err != nil {
 		return nil, fmt.Errorf("regenerate client secret: %w", err)
 	}
-	return dto.BuildOAuth2ClientResponseWithSecret(updated, true), nil
+	return buildOAuth2ClientResponseWithSecret(updated, true), nil
 }
 
 // marshalJSONArray 将字符串切片序列化为 JSON；切片为空（nil / len 0）时返回空串以触发 SQL 侧的 NULLIF 不覆盖语义。
@@ -1038,7 +1038,7 @@ func (s *OAuth2ClientService) GetOAuth2Client(ctx context.Context, clientID stri
 		return nil, gowk.NewError("client not found")
 	}
 	// Convert database model to DTO
-	return dto.BuildOAuth2ClientResponse(client), nil
+	return buildOAuth2ClientResponse(client), nil
 }
 
 // ListOAuth2Clients lists OAuth2 clients with pagination and filtering
@@ -1049,7 +1049,7 @@ func (s *OAuth2ClientService) ListOAuth2Clients(ctx context.Context) ([]*dto.OAu
 	}
 	res := make([]*dto.OAuth2ClientResponse, 0, len(os))
 	for _, o := range os {
-		res = append(res, dto.BuildOAuth2ClientResponse(o))
+		res = append(res, buildOAuth2ClientResponse(o))
 	}
 	return res, nil
 }

@@ -1,8 +1,7 @@
+// Package dto 是 auth 的纯数据传输对象集合，不依赖 internal/db 等服务端代码，
+// 因此可被 console 等远程消费方经 embed→pkg/client→pkg/dto 依赖链安全引用。
+// db 实体到 DTO 的转换（依赖 internal/db）放在服务端 internal/service。
 package dto
-
-import (
-	"github.com/iautre/auth/internal/db"
-)
 
 // User registration parameters
 type RegisterParams struct {
@@ -100,28 +99,6 @@ type OAuth2ClientResponse struct {
 	Created         string `json:"created"`
 	Updated         string `json:"updated"`
 	Enabled         bool   `json:"enabled"` // true = active, false = disabled
-}
-
-func BuildOAuth2ClientResponse(client db.AuthOauth2Client) *OAuth2ClientResponse {
-	return BuildOAuth2ClientResponseWithSecret(client, false)
-}
-
-func BuildOAuth2ClientResponseWithSecret(client db.AuthOauth2Client, includeSecret bool) *OAuth2ClientResponse {
-	secret := ""
-	if includeSecret {
-		secret = client.Secret
-	}
-	return &OAuth2ClientResponse{
-		ID:              client.ID,
-		Name:            client.Name,
-		Secret:          secret,
-		RedirectURIs:    client.RedirectUris,
-		Scopes:          client.Scopes,
-		GrantTypes:      client.GrantTypes,
-		AccessTokenTTL:  client.AccessTokenTtl,
-		RefreshTokenTTL: client.RefreshTokenTtl,
-		Enabled:         client.Enabled,
-	}
 }
 
 // OAuth Client Management DTOs

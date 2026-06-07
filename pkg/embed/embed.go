@@ -1,16 +1,19 @@
-// Package embed 提供将 auth 作为"可嵌入模块"接入其他系统的能力。
-//   - local 模式（AUTH_MODE=local 或未设置）：挂载路由、使用同一 DB/Redis，登录与用户信息由 auth 直接提供。
-//   - remote 模式（AUTH_MODE=remote）：全部路由通过 gRPC 与远端 auth 服务通信，需配置 AUTH_GRPC_ADDR。
+// Package embed 提供将 auth 以「远程（gRPC）」方式嵌入其他系统的 gin 中间件与登录路由。
+//
+// 本包是 client-only：仅依赖 auth 的 pkg/client、pkg/proto、pkg/dto 与 gowk，
+// 不引用任何 internal 包，因此可被其他服务通过 go get 远程依赖，
+// 无需 auth 的 internal/db 等服务端生成代码。
+//
+// 通过环境变量 AUTH_GRPC_ADDR 指向远程 auth gRPC 服务（如 auth:50051）。
+// 早期的 local（与 auth 共享数据库、直连 internal/service）模式已移除；
+// 需要 local 直连的场景应直接使用 auth 服务端自身，而非嵌入本包。
 package embed
 
 import (
-	"context"
 	"net/http"
 	"os"
 
 	"github.com/gin-gonic/gin"
-	"github.com/iautre/auth/internal/route"
-	"github.com/iautre/auth/internal/service"
 	authclient "github.com/iautre/auth/pkg/client"
 	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
@@ -65,7 +68,7 @@ type Middlewares struct {
 	Login      gin.HandlerFunc
 	UserAuth   gin.HandlerFunc
 	CheckAdmin gin.HandlerFunc
-	// doLogin 是模式相关的登录实现，由 Setup 内部填充。
+	// doLogin 是登录实现，由 Setup 内部填充（远程 gRPC 登录）。
 	doLogin func(ctx *gin.Context) (token string, userId int64, nickname string, err error)
 }
 
@@ -90,92 +93,31 @@ func (m *Middlewares) loginHandler() gin.HandlerFunc {
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-// Setup 读取环境变量 AUTH_MODE（local/remote），自动选择实现：
-//   - local：在 router 上以 prefix 为前缀挂载 auth HTTP 路由，用 gowk Redis 验证 token。
-//   - remote：通过 AUTH_GRPC_ADDR 与 auth gRPC 服务通信，挂载相同 HTTP 路由（后端走 gRPC）。
-//
-// 登录接口固定为 prefix + "/login"，所有 auth 相关路径均由 auth 统一定义。
+// Setup 以远程模式挂载 auth 的 HTTP 路由与中间件，并注册登录接口 prefix + "/login"。
+// 需要环境变量 AUTH_GRPC_ADDR 指向 auth gRPC 服务（如 auth:50051）。
 //
 // 调用方只需：
 //
-//	mw := auth.Setup(router, "/api/auth")
+//	mw := embed.Setup(router, "/api/auth")
 //	api := router.Group("/api", mw.Login, mw.UserAuth)
 func Setup(router *gin.Engine, prefix string) *Middlewares {
-	var mw *Middlewares
-	if isRemote() {
-		mw = setupRemote(router, prefix)
-	} else {
-		mw = setupLocal(router, prefix)
-	}
-	router.POST(prefix+"/login", mw.loginHandler())
-	return mw
-}
-
-func isRemote() bool {
-	return os.Getenv("AUTH_MODE") == "remote"
-}
-
-// ─── local 模式 ────────────────────────────────────────────────────────────────
-
-func setupLocal(router *gin.Engine, prefix string) *Middlewares {
-	Mount(router, prefix)
-	return &Middlewares{
-		Login:      gowk.CheckLoginMiddleware(),
-		UserAuth:   localUserAuth(),
-		CheckAdmin: checkAdmin(),
-		doLogin:    localDoLogin,
-	}
-}
-
-func localDoLogin(ctx *gin.Context) (token string, userId int64, nickname string, err error) {
-	var params dto.LoginParams
-	if err = ctx.ShouldBind(&params); err != nil {
-		return
-	}
-	return NativeLogin(ctx, &params)
-}
-
-func localUserAuth() gin.HandlerFunc {
-	unauth := &gowk.ErrorCode{Status: http.StatusUnauthorized, Code: http.StatusUnauthorized, Msg: "认证失败"}
-	return func(ctx *gin.Context) {
-		id := gowk.LoginId(ctx)
-		if id <= 0 {
-			gowk.Fail(ctx, unauth)
-			return
-		}
-		var svc service.UserService
-		user, err := svc.GetById(ctx.Request.Context(), id)
-		if err != nil {
-			gowk.Fail(ctx, unauth)
-			return
-		}
-		ctx.Set(ContextUserKey, &User{
-			Id:       user.ID,
-			Nickname: user.Nickname.String,
-			Group:    user.Group.String,
-		})
-		ctx.Next()
-	}
-}
-
-// ─── remote 模式 ───────────────────────────────────────────────────────────────
-
-func setupRemote(router *gin.Engine, prefix string) *Middlewares {
 	grpcAddr := os.Getenv("AUTH_GRPC_ADDR")
 	if grpcAddr == "" {
-		panic("auth: AUTH_MODE=remote 时必须配置 AUTH_GRPC_ADDR（如 auth:50051）")
+		panic("auth: 远程模式必须配置 AUTH_GRPC_ADDR（如 auth:50051）")
 	}
 	c, err := authclient.NewAuthClient(grpcAddr, "", "")
 	if err != nil {
 		panic("auth: gRPC 客户端初始化失败: " + err.Error())
 	}
 	c.MountRemote(router, prefix)
-	return &Middlewares{
+	mw := &Middlewares{
 		Login:      remoteLoginMW(c),
 		UserAuth:   remoteUserAuth(c),
 		CheckAdmin: checkAdmin(),
 		doLogin:    remoteDoLogin(c),
 	}
+	router.POST(prefix+"/login", mw.loginHandler())
+	return mw
 }
 
 func checkAdmin() gin.HandlerFunc {
@@ -249,39 +191,4 @@ func bearerToken(ctx *gin.Context) string {
 		return auth[7:]
 	}
 	return ctx.GetHeader("X-Token")
-}
-
-// ─── 原有公共 API（保持不变）──────────────────────────────────────────────────
-
-// Mount 将 auth 的 HTTP 路由挂载到给定 prefix 下（如 "/api/auth"）。
-func Mount(router *gin.Engine, prefix string) {
-	g := router.Group(prefix)
-	route.Router(g)
-}
-
-// NativeLogin 使用 auth 的用户校验逻辑，签发 gowk Redis token，供 local 模式登录使用。
-func NativeLogin(ctx *gin.Context, params *dto.LoginParams) (token string, userID int64, nickname string, err error) {
-	var userService service.UserService
-	user, err := userService.Login(ctx.Request.Context(), params)
-	if err != nil {
-		return "", 0, "", err
-	}
-	token, err = gowk.Login(ctx, user.ID)
-	if err != nil {
-		return "", 0, "", err
-	}
-	return token, user.ID, user.Nickname.String, nil
-}
-
-// UserInfo 根据 userId 返回 nickname、group，供调用方填入 context（local 模式）。
-func UserInfo(ctx context.Context, id int64) (userID int64, nickname, group string, err error) {
-	if id <= 0 {
-		return 0, "", "", gowk.NewError("invalid user id")
-	}
-	var userService service.UserService
-	user, err := userService.GetById(ctx, id)
-	if err != nil {
-		return 0, "", "", err
-	}
-	return user.ID, user.Nickname.String, user.Group.String, nil
 }

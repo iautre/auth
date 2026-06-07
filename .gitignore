@@ -3,7 +3,7 @@ go.work.sum
 .DS_Store
 .env
 sqlc.yaml
-/pkg/proto/auth_grpc.pb.go
-/pkg/proto/auth.pb.go
+# pkg/proto 生成代码需入库：embed(client-only) → pkg/client → pkg/proto，供其他服务远程依赖。
+# internal/db 仍忽略：embed 已拆为 client-only，远程消费方不再传递依赖 internal/db。
 /internal/db/
 /bin/server
