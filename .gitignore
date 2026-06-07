@@ -4,6 +4,5 @@ go.work.sum
 .env
 sqlc.yaml
 # pkg/proto 生成代码需入库：embed(client-only) → pkg/client → pkg/proto，供其他服务远程依赖。
-# internal/db 仍忽略：embed 已拆为 client-only，远程消费方不再传递依赖 internal/db。
-/internal/db/
+# internal/db 为 sqlc 生成代码，与 console 一致提交入库，供 auth 服务端构建与 module 发布。
 /bin/server
