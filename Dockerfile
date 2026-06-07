@@ -1,38 +1,37 @@
-FROM golang:1.26-alpine3.22 AS go-builder
+FROM golang:1.26.4-alpine as go-builder
 
-WORKDIR /app
-COPY . /app
+# 父级上下文构建：auth 依赖本地 gowk（go.mod replace => ../gowk）
+COPY auth /app/auth
+COPY gowk /app/gowk
+
+WORKDIR /app/auth
 
 RUN set -x \
     && sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk update && apk upgrade\
-    && apk --no-cache add tzdata upx git \
-    # && apk --no-cache add tzdata \
-    && go env -w GO111MODULE=on \
-    && go env -w GOPROXY=https://goproxy.cn,direct \
-    && go env -w CGO_ENABLED=0 \
-    && go env -w GOOS=linux
+    && apk update && apk --no-cache add tzdata git
 
-RUN set -x \
-    && ls -la \
-    ## -ldflags "-s -w"进新压缩
-    && go build -ldflags "-s -w" -o server_temp \
-    ## 借助第三方工具再压缩压缩级别为-1-9
-    && upx -9 server_temp -o server \
-    # && cp server_temp server \
-    && rm -f server_temp
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
+ENV GOPROXY=https://goproxy.io,direct
+
+RUN rm -f go.work go.work.sum && go work init && go work use . ../gowk \
+    && go build -ldflags "-s -w" -o server . && chmod +x server
 
 # production stage
-FROM scratch AS production
+FROM scratch
 
-ENV GO_ENV=prod
 ENV GIN_MODE=release
-ENV HTTP_SERVER_ADDR=:3030
-ENV GRPC_SERVER_ADDR=:3031
+ENV GO_ENV=prod
+# 端口默认值（部署可由 docker run -e 覆盖）；gowk 直接读取这两个环境变量。
+ENV HTTP_SERVER_ADDR=:8087
+ENV GRPC_SERVER_ADDR=:50051
 
-COPY --from=go-builder /app/server /
+COPY --from=go-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-builder /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+COPY --from=go-builder /app/auth/server /
 
-EXPOSE 3030
-EXPOSE 3031
+# 健康检查：scratch 无 shell/curl，复用二进制自带的 healthcheck 子命令探测 /health
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["/server", "healthcheck"]
+
 ENTRYPOINT ["/server"]

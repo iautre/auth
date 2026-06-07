@@ -9,9 +9,9 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
-	authclient "github.com/iautre/auth/pkg/client"
 	"github.com/iautre/auth/internal/route"
 	"github.com/iautre/auth/internal/service"
+	authclient "github.com/iautre/auth/pkg/client"
 	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
 )
@@ -46,7 +46,6 @@ func ContextUser(ctx *gin.Context) *User {
 	u, _ := v.(*User)
 	return u
 }
-
 
 // UserId 快捷获取当前登录用户 ID，未登录时返回 0。
 func UserId(ctx *gin.Context) int64 {

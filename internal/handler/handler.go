@@ -431,7 +431,11 @@ func (g *GrpcHandler) CheckToken(ctx context.Context, req *authpb.CheckTokenRequ
 		return nil, status.Error(codes.InvalidArgument, "token is required")
 	}
 
-	jsonData, err := gowk.Redis().Get(ctx, redisTokenPrefix+req.Token).Result()
+	rdb := gowk.Redis()
+	if rdb == nil {
+		return nil, status.Error(codes.Unavailable, "redis not ready")
+	}
+	jsonData, err := rdb.Get(ctx, redisTokenPrefix+req.Token).Result()
 	if err != nil {
 		return nil, status.Errorf(codes.Unauthenticated, "invalid or expired token")
 	}
@@ -500,7 +504,11 @@ func (g *GrpcHandler) Login(ctx context.Context, req *authpb.LoginRequest) (*aut
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "marshal token: %v", err)
 	}
-	if err := gowk.Redis().Set(ctx, redisTokenPrefix+tokenValue, string(payload), time.Duration(nativeTokenTTL)*time.Second).Err(); err != nil {
+	rdb := gowk.Redis()
+	if rdb == nil {
+		return nil, status.Error(codes.Unavailable, "redis not ready")
+	}
+	if err := rdb.Set(ctx, redisTokenPrefix+tokenValue, string(payload), time.Duration(nativeTokenTTL)*time.Second).Err(); err != nil {
 		return nil, status.Errorf(codes.Internal, "store token: %v", err)
 	}
 

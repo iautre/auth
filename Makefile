@@ -5,7 +5,10 @@ SERVER    := root@upload.autre.cn
 HTTP_PORT := 8087
 GRPC_PORT := 50051
 
-.PHONY: proto sqlc generate clean build build-image help deploy restart logs stop migrate run run-custom install-tools check-tools
+# 部署密钥从 gitignore 的 .env 读取（DATABASE_DSN / EMQX_AUTH_KEY）
+-include .env
+
+.PHONY: proto sqlc generate clean build build-image help deploy restart logs stop migrate run install-tools check-tools
 
 # Default target
 help:
@@ -74,23 +77,16 @@ build:
 	@echo "✅ Build completed! Binary: bin/server"
 
 # Build docker image (由 deploy 目标调用)
+# 从父目录构建，上下文包含 auth 与 gowk，满足 go.mod replace => ../gowk
 build-image:
 	@echo "Building docker image $(IMAGE):latest..."
-	docker build -t $(IMAGE):latest .
+	cd .. && docker build --platform linux/amd64 -f auth/Dockerfile -t $(IMAGE):latest .
 	@echo "✅ Image built: $(IMAGE):latest"
 
-# Run combined server
+# Run combined server（端口走环境变量 HTTP_SERVER_ADDR / GRPC_SERVER_ADDR）
 run: build
 	@echo "Starting combined HTTP/gRPC server..."
 	./bin/server
-
-# Run with custom ports
-run-custom: build
-	@echo "Starting combined HTTP/gRPC server with custom ports..."
-	./bin/server -http-port=$(HTTP_PORT) -grpc-port=$(GRPC_PORT)
-
-# Example usage:
-# make run-custom HTTP_PORT=:9000 GRPC_PORT=:6000
 
 ## 构建 → 传输 → 服务器重启（一键部署）
 deploy: build-image
@@ -110,8 +106,9 @@ restart:
 			--restart always \
 			-e HTTP_SERVER_ADDR=:$(HTTP_PORT) \
 			-e GRPC_SERVER_ADDR=:$(GRPC_PORT) \
-			-e DATABASE_DSN="postgres://postgres:REDACTED@postgres:5432/auth?pool_max_conns=20" \
+			-e DATABASE_DSN="$(DATABASE_DSN)" \
 			-e REDIS_ADDR=redis:6379 \
+			-e EMQX_AUTH_KEY=$(EMQX_AUTH_KEY) \
 			$(IMAGE):latest \
 	'
 	@echo ">>> 容器已启动，查看日志:"

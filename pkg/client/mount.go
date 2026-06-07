@@ -11,11 +11,12 @@ import (
 
 // MountRemote 将 auth 的 HTTP 接口以 gRPC 为后端挂载到 router 的 prefix 路由组下。
 // 登录接口（POST prefix/login）由 embed.Setup 统一注册，MountRemote 只挂载其余接口：
-//   GET   /user/info                — 获取完整用户信息（需 token）
-//   POST  /oauth2/token             — OAuth2 token 换取
-//   GET   /.well-known/openid_configuration — OIDC 发现文档
-//   GET   /oidc/userinfo            — OIDC 用户信息（需 access_token）
-//   GET   /oidc/jwks                — JWKS 公钥
+//
+//	GET   /user/info                — 获取完整用户信息（需 token）
+//	POST  /oauth2/token             — OAuth2 token 换取
+//	GET   /.well-known/openid_configuration — OIDC 发现文档
+//	GET   /oidc/userinfo            — OIDC 用户信息（需 access_token）
+//	GET   /oidc/jwks                — JWKS 公钥
 func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 	g := router.Group(prefix)
 

@@ -1,6 +1,7 @@
 go.work
 go.work.sum
 .DS_Store
+.env
 sqlc.yaml
 /pkg/proto/auth_grpc.pb.go
 /pkg/proto/auth.pb.go

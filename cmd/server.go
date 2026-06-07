@@ -2,12 +2,7 @@ package cmd
 
 import (
 	"context"
-	"flag"
-	"fmt"
-	"os"
-	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/handler"
 	"github.com/iautre/auth/internal/route"
@@ -17,25 +12,9 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
-// getEnvOrDefault returns environment variable value or default
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
-
 func Run() {
-	// Parse command line flags with environment variable defaults
-	httpPort := flag.String("http-port", getEnvOrDefault("HTTP_SERVER_ADDR", ":8087"), "HTTP server port")
-	grpcPort := flag.String("grpc-port", getEnvOrDefault("GRPC_SERVER_ADDR", ":50051"), "gRPC server port")
-	flag.Parse()
-
-	// Set server addresses in gowk config
-	gowk.SetHTTPServerAddr(*httpPort)
-	gowk.SetGRPCServerAddr(*grpcPort)
-
-	fmt.Printf("Starting servers with HTTP port: %s, gRPC port: %s\n", *httpPort, *grpcPort)
+	// 端口由 gowk 直接从 HTTP_SERVER_ADDR / GRPC_SERVER_ADDR 环境变量读取（默认值见 Dockerfile ENV），
+	// 此处无需再读取或设置。
 
 	// Create servers
 	r := gowk.New()
@@ -44,37 +23,28 @@ func Run() {
 	// embed 模式下 /login 由 embed.Setup 注册为 mw.loginHandler（签发 gowk native token）。
 	userHandler := handler.NewUserHandler(context.Background())
 	apiGroup.POST("/login", userHandler.Login)
+	// EMQX HTTP 认证回调：校验 native 登录 token / OAuth2 access_token。
+	mqttHandler := handler.NewMqttHandler(context.Background())
+	apiGroup.POST("/mqtt/auth", mqttHandler.Auth)
 	route.Router(apiGroup)
 
+	// recovery 必须在链首：先兜住 handler panic，再做 service-token 鉴权，避免 panic 直接 crash 进程。
 	server := grpc.NewServer(
-		grpc.UnaryInterceptor(handler.ServiceTokenUnaryInterceptor(config.AuthGRPCToken())),
-		grpc.StreamInterceptor(handler.ServiceTokenStreamInterceptor(config.AuthGRPCToken())),
+		grpc.ChainUnaryInterceptor(
+			handler.RecoveryUnaryInterceptor(),
+			handler.ServiceTokenUnaryInterceptor(config.AuthGRPCToken()),
+		),
+		grpc.ChainStreamInterceptor(
+			handler.RecoveryStreamInterceptor(),
+			handler.ServiceTokenStreamInterceptor(config.AuthGRPCToken()),
+		),
 	)
 	reflection.Register(server)
 	grpcServer := &gowk.GrpcServer{Server: server}
 	authServer := handler.NewAuthServiceServer(context.Background())
 	authpb.RegisterAuthServiceServer(grpcServer.Server, authServer)
 
-	// Add health check endpoints
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-			"time":   time.Now().Format(time.RFC3339),
-			"services": gin.H{
-				"http": "running",
-				"grpc": "running",
-			},
-		})
-	})
-
-	// 用闭包捕获 *grpcPort，以便 --grpc-port 或 GRPC_SERVER_ADDR 改动时
-	// 健康检查返回的也是真实生效的端口，而不是写死的 50051。
-	r.GET("/grpc-status", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"status": "ok",
-			"port":   *grpcPort,
-		})
-	})
+	// /health 由 gowk.New() 统一注册（存活探测，含 grpc 状态），此处不再重复。
 
 	// Start both servers using unified API
 	gowk.RunBoth(r, grpcServer)
