@@ -1,8 +1,7 @@
 FROM golang:1.26.4-alpine as go-builder
 
-# 父级上下文构建：auth 依赖本地 gowk（go.mod replace => ../gowk）
+# auth 使用远程 gowk（go.mod 中的版本，经 GOPROXY 拉取），不再依赖本地 ../gowk 源码。
 COPY auth /app/auth
-COPY gowk /app/gowk
 
 WORKDIR /app/auth
 
@@ -15,7 +14,8 @@ ENV GOOS=linux
 ENV GOARCH=amd64
 ENV GOPROXY=https://goproxy.io,direct
 
-RUN rm -f go.work go.work.sum && go work init && go work use . ../gowk \
+# 删除 go.work，纯 module 模式构建：依赖完全按 go.mod / go.sum 解析（含远程 gowk）。
+RUN rm -f go.work go.work.sum \
     && go build -ldflags "-s -w" -o server . && chmod +x server
 
 # production stage

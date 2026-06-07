@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/gin-gonic/gin v1.12.0
-	github.com/iautre/gowk v0.0.0-20260606145435-6d3a9c8540f4
+	github.com/iautre/gowk v0.0.0-20260607123416-70bb3c2ac2b9
 	github.com/jackc/pgx/v5 v5.10.0
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
