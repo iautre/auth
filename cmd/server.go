@@ -6,6 +6,7 @@ import (
 	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/handler"
 	"github.com/iautre/auth/internal/route"
+	"github.com/iautre/auth/migrations"
 	authpb "github.com/iautre/auth/pkg/proto"
 	"github.com/iautre/gowk"
 	"google.golang.org/grpc"
@@ -15,6 +16,9 @@ import (
 func Run() {
 	// 端口由 gowk 直接从 HTTP_SERVER_ADDR / GRPC_SERVER_ADDR 环境变量读取（默认值见 Dockerfile ENV），
 	// 此处无需再读取或设置。
+
+	// 注册数据库迁移：gowk 在连上 DB 后、对外服务前自动按版本顺序执行 migrations/*.sql。
+	gowk.AddMigrations(migrations.FS, ".")
 
 	// Create servers
 	r := gowk.New()
