@@ -2,6 +2,7 @@ go.work
 go.work.sum
 .DS_Store
 .env
+.idea/
 sqlc.yaml
 # pkg/proto 生成代码需入库：embed(client-only) → pkg/client → pkg/proto，供其他服务远程依赖。
 # internal/db 为 sqlc 生成代码，与 console 一致提交入库，供 auth 服务端构建与 module 发布。
