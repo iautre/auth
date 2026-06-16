@@ -80,18 +80,22 @@ check-tools:
 	@command -v protoc-gen-go-grpc >/dev/null 2>&1 && echo "✅ protoc-gen-go-grpc found" || echo "❌ protoc-gen-go-grpc not found"
 	@command -v sqlc >/dev/null 2>&1 && echo "✅ sqlc found" || echo "❌ sqlc not found"
 
+# 构建版本：注入到 gowk.Version（默认 beta），用 git tag/commit 覆盖
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo beta)
+LDFLAGS := -X github.com/iautre/gowk.Version=$(VERSION)
+
 # Build combined server (main 位于仓库根目录 main.go)
 build:
-	@echo "Building combined HTTP/gRPC server..."
-	go build -o bin/server .
+	@echo "Building combined HTTP/gRPC server (version=$(VERSION))..."
+	go build -ldflags "$(LDFLAGS)" -o bin/server .
 	@echo "✅ Build completed! Binary: bin/server"
 
 # Build docker image (由 deploy 目标调用)
 # 上下文为 auth 自身目录，gowk 按 go.mod 远程拉取（无本地 replace）
 # 有 container(Apple) 用 container，否则 docker
 build-image:
-	@echo "Building image $(IMG):latest (runtime=$(RUNTIME))..."
-	$(RUNTIME) build --platform linux/amd64 -t $(IMG):latest .
+	@echo "Building image $(IMG):latest (runtime=$(RUNTIME), version=$(VERSION))..."
+	$(RUNTIME) build --platform linux/amd64 --build-arg VERSION=$(VERSION) -t $(IMG):latest .
 	@echo "✅ Image built: $(IMG):latest"
 
 # 推送镜像到 cnb（需先登录：$(RUNTIME) [registry] login docker.cnb.cool -u cnb -p <令牌>）

@@ -15,9 +15,12 @@ ENV GOOS=linux
 ENV GOARCH=amd64
 ENV GOPROXY=https://goproxy.cn,direct
 
+# 构建版本注入 gowk.Version（默认 beta，由 Makefile --build-arg 传入 git 版本）
+ARG VERSION=beta
+
 # 删除 go.work，纯 module 模式构建：依赖完全按 go.mod / go.sum 解析（含远程 gowk）。
 RUN rm -f go.work go.work.sum \
-    && go build -ldflags "-s -w" -o server . && chmod +x server
+    && go build -ldflags "-s -w -X github.com/iautre/gowk.Version=$VERSION" -o server . && chmod +x server
 
 # production stage
 FROM scratch

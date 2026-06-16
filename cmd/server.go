@@ -5,6 +5,7 @@ import (
 
 	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/handler"
+	"github.com/iautre/auth/internal/mcpserver"
 	"github.com/iautre/auth/internal/route"
 	"github.com/iautre/auth/migrations"
 	authpb "github.com/iautre/auth/pkg/proto"
@@ -31,6 +32,10 @@ func Run() {
 	mqttHandler := handler.NewMqttHandler(context.Background())
 	apiGroup.POST("/mqtt/auth", mqttHandler.Auth)
 	route.Router(apiGroup)
+
+	// MCP（Streamable HTTP）挂到主服务，复用同一端口。
+	// tool 直连 internal/service，鉴权与受登录保护的 HTTP 接口一致（gowk.CheckLogin）。
+	gowk.SetupMCP(r, "/mcp", mcpserver.NewProvider(), gowk.CheckLogin)
 
 	// recovery 必须在链首：先兜住 handler panic，再做 service-token 鉴权，避免 panic 直接 crash 进程。
 	server := grpc.NewServer(
