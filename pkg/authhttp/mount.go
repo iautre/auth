@@ -11,6 +11,7 @@ import (
 	"github.com/iautre/auth/internal/handler"
 	"github.com/iautre/auth/internal/mcpserver"
 	"github.com/iautre/auth/internal/route"
+	"github.com/iautre/auth/migrations"
 	"github.com/iautre/gowk"
 )
 
@@ -31,8 +32,11 @@ type Module struct {
 }
 
 // Mount injects all auth HTTP routes into router.
-// Database/Redis initialization and process lifecycle remain the host application's responsibility.
+// Auth migrations are registered automatically; database/Redis connections and process lifecycle
+// remain the host application's responsibility.
 func Mount(router *gin.Engine, options Options) *Module {
+	migrations.Register()
+
 	group := router.Group(normalizePath(options.Prefix))
 	ctx := context.Background()
 
