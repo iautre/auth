@@ -42,15 +42,20 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 		return
 	}
 
-	// 签发 JWT（RS256），其他服务凭 JWKS 公钥本地验证，无需 Redis 或 gRPC
-	// /login 不走 OAuth2，沿用全量 claim（scope 传空字符串）。
-	jwtToken, err := service.DefaultOIDCService().GenerateIDToken(ctx, user.ID, "auth", "", "", service.DefaultAccessTokenTTL())
+	// HTTP、gRPC 与包内嵌模式统一签发 gowk native token；OIDC ID Token 仅由 OAuth2/OIDC 流程签发。
+	token, err := gowk.Login(ctx, user.ID)
 	if err != nil {
 		gowk.Response(ctx, http.StatusInternalServerError, nil, err)
 		return
 	}
 
-	gowk.Response(ctx, http.StatusOK, jwtToken, nil)
+	gowk.Response(ctx, http.StatusOK, dto.LoginRes{
+		Token:      token,
+		UserId:     user.ID,
+		Nickname:   user.Nickname.String,
+		Avatar:     user.Avatar.String,
+		IsVerified: user.IsVerified.Bool,
+	}, nil)
 }
 
 func (u *UserHandler) BasicAuthMiddleware(ctx *gin.Context) {
@@ -175,13 +180,18 @@ func (u *UserHandler) ResetOTPCode(ctx *gin.Context) {
 type OAuth2Handler struct {
 	oauth2Service *service.OAuth2Service
 	oidcService   *service.OIDCService
+	apiPrefix     string
 }
 
-func NewOAuth2Handler(ctx context.Context) *OAuth2Handler {
-	return &OAuth2Handler{
+func NewOAuth2Handler(ctx context.Context, apiPrefix ...string) *OAuth2Handler {
+	handler := &OAuth2Handler{
 		oauth2Service: service.NewOAuth2Service(ctx),
 		oidcService:   service.DefaultOIDCService(),
 	}
+	if len(apiPrefix) > 0 {
+		handler.apiPrefix = apiPrefix[0]
+	}
+	return handler
 }
 
 func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
@@ -261,7 +271,7 @@ func (o *OAuth2Handler) OAuth2Token(ctx *gin.Context) {
 }
 
 func (o *OAuth2Handler) OIDCDiscovery(ctx *gin.Context) {
-	discovery := o.oidcService.GetDiscoveryDocument()
+	discovery := o.oidcService.GetDiscoveryDocumentWithPrefix(o.apiPrefix)
 	gowk.Response(ctx, http.StatusOK, discovery, nil)
 }
 

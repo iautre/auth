@@ -8,10 +8,18 @@ import (
 // NewProvider 构建 auth MCP provider。
 // tool 直接调用 internal/service（与 HTTP handler 同一份逻辑），不走 HTTP 回连；
 // 鉴权由挂载时的中间件负责（见 cmd/server.go：与受登录保护的 HTTP 接口同一道 gowk.CheckLogin）。
-func NewProvider() *Server { return &Server{} }
+func NewProvider(apiPrefix ...string) *Server {
+	server := &Server{}
+	if len(apiPrefix) > 0 {
+		server.apiPrefix = apiPrefix[0]
+	}
+	return server
+}
 
 // Server 仅负责把 auth 业务 service 注册为 MCP tool。
-type Server struct{}
+type Server struct {
+	apiPrefix string
+}
 
 func (s *Server) MCPName() string    { return "auth" }
 func (s *Server) MCPVersion() string { return gowk.Version }

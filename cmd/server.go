@@ -5,9 +5,8 @@ import (
 
 	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/handler"
-	"github.com/iautre/auth/internal/mcpserver"
-	"github.com/iautre/auth/internal/route"
 	"github.com/iautre/auth/migrations"
+	"github.com/iautre/auth/pkg/authhttp"
 	authpb "github.com/iautre/auth/pkg/proto"
 	"github.com/iautre/gowk"
 	"google.golang.org/grpc"
@@ -23,19 +22,11 @@ func Run() {
 
 	// Create servers
 	r := gowk.New()
-	apiGroup := r.Group(config.AuthAPIPrefix())
-	// 独立部署模式：/login 使用 HTTP UserHandler（签发 JWT ID Token）。
-	// embed 模式下 /login 由 embed.Setup 注册为 mw.loginHandler（签发 gowk native token）。
-	userHandler := handler.NewUserHandler(context.Background())
-	apiGroup.POST("/login", userHandler.Login)
-	// EMQX HTTP 认证回调：校验 native 登录 token / OAuth2 access_token。
-	mqttHandler := handler.NewMqttHandler(context.Background())
-	apiGroup.POST("/mqtt/auth", mqttHandler.Auth)
-	route.Router(apiGroup)
-
-	// MCP（Streamable HTTP）挂到主服务，复用同一端口。
-	// tool 直连 internal/service，鉴权与受登录保护的 HTTP 接口一致（gowk.CheckLogin）。
-	gowk.SetupMCP(r, "/mcp", mcpserver.NewProvider(), gowk.CheckLogin)
+	// 独立 HTTP 模式与第三方包内嵌模式共用同一个 Mount，不再分别注册路由。
+	authhttp.Mount(r, authhttp.Options{
+		Prefix:  config.AuthAPIPrefix(),
+		MCPPath: "/mcp",
+	})
 
 	// recovery 必须在链首：先兜住 handler panic，再做 service-token 鉴权，避免 panic 直接 crash 进程。
 	server := grpc.NewServer(

@@ -604,11 +604,19 @@ var defaultOIDCService = &OIDCService{}
 func DefaultOIDCService() *OIDCService { return defaultOIDCService }
 
 func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
-	// Get normalized base URL
-	baseURL := gowk.BaseURL()
+	return o.GetDiscoveryDocumentWithPrefix(config.AuthAPIPrefix())
+}
 
-	// Get normalized API prefix
-	prefix := config.AuthAPIPrefix()
+// GetDiscoveryDocumentWithPrefix 为指定 HTTP 挂载前缀生成发现文档。
+// 包内嵌模式由实际 RouterGroup.BasePath 传入，避免与进程环境变量产生两个配置来源。
+func (o *OIDCService) GetDiscoveryDocumentWithPrefix(prefix string) *dto.OIDCDiscoveryResponse {
+	baseURL := gowk.BaseURL()
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" || prefix == "/" {
+		prefix = ""
+	} else {
+		prefix = "/" + strings.Trim(prefix, "/")
+	}
 
 	// Build endpoints safely
 	buildEndpoint := func(path string) string {

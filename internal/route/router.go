@@ -19,7 +19,7 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	// Create handlers with context
 	ctx := context.Background()
 	u := handler.NewUserHandler(ctx)
-	o := handler.NewOAuth2Handler(ctx)
+	o := handler.NewOAuth2Handler(ctx, ro.BasePath())
 	oc := handler.NewOAuth2ClientHandler(ctx)
 
 	// User endpoints

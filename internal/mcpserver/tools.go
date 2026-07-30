@@ -25,7 +25,7 @@ func wrap(v any) (jsonOut, error) {
 }
 
 func (s *Server) oidcDiscovery(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, jsonOut, error) {
-	out, err := wrap(service.DefaultOIDCService().GetDiscoveryDocument())
+	out, err := wrap(service.DefaultOIDCService().GetDiscoveryDocumentWithPrefix(s.apiPrefix))
 	return nil, out, err
 }
 
