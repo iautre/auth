@@ -10,7 +10,7 @@ import (
 
 func TestOIDCDiscoveryUsesExplicitHTTPPrefix(t *testing.T) {
 	discovery := DefaultOIDCService().GetDiscoveryDocumentWithPrefix("api/auth/")
-	want := gowk.BaseURL() + "/api/auth/oauth2/token"
+	want := gowk.BaseURL() + "/api/auth/oidc/token"
 	if discovery.TokenEndpoint != want {
 		t.Fatalf("TokenEndpoint = %q, want %q", discovery.TokenEndpoint, want)
 	}

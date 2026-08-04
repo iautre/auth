@@ -14,7 +14,8 @@ import (
 //
 //	GET   /user/info                — 获取完整用户信息（需 token）
 //	POST  /oauth2/token             — OAuth2 token 换取
-//	GET   /.well-known/openid_configuration — OIDC 发现文档
+//	POST  /oidc/token                       — 标准 OIDC token 换取
+//	GET   /.well-known/openid-configuration — OIDC 发现文档
 //	GET   /oidc/userinfo            — OIDC 用户信息（需 access_token）
 //	GET   /oidc/jwks                — JWKS 公钥
 func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
@@ -54,13 +55,34 @@ func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 		gowk.Response(ctx, http.StatusOK, resp, nil)
 	})
 
-	g.GET("/.well-known/openid_configuration", func(ctx *gin.Context) {
+	g.POST("/oidc/token", func(ctx *gin.Context) {
+		var params dto.OAuth2TokenRequest
+		if err := ctx.ShouldBind(&params); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": err.Error()})
+			ctx.Abort()
+			return
+		}
+		resp, err := c.OAuth2Token(ctx.Request.Context(),
+			params.GrantType, params.Code, params.RedirectURI,
+			params.ClientID, params.ClientSecret, params.RefreshToken,
+			params.Scope, params.CodeVerifier)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": err.Error()})
+			ctx.Abort()
+			return
+		}
+		ctx.JSON(http.StatusOK, resp)
+		ctx.Abort()
+	})
+
+	g.GET("/.well-known/openid-configuration", func(ctx *gin.Context) {
 		resp, err := c.OIDCDiscovery(ctx.Request.Context())
 		if err != nil {
 			gowk.Response(ctx, http.StatusInternalServerError, nil, err)
 			return
 		}
-		gowk.Response(ctx, http.StatusOK, resp, nil)
+		ctx.JSON(http.StatusOK, resp)
+		ctx.Abort()
 	})
 
 	g.GET("/oidc/jwks", func(ctx *gin.Context) {
@@ -69,7 +91,8 @@ func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 			gowk.Response(ctx, http.StatusInternalServerError, nil, err)
 			return
 		}
-		gowk.Response(ctx, http.StatusOK, resp, nil)
+		ctx.JSON(http.StatusOK, resp)
+		ctx.Abort()
 	})
 
 	g.GET("/oidc/userinfo", func(ctx *gin.Context) {
@@ -83,7 +106,8 @@ func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 			gowk.Response(ctx, http.StatusUnauthorized, nil, err)
 			return
 		}
-		gowk.Response(ctx, http.StatusOK, resp, nil)
+		ctx.JSON(http.StatusOK, resp)
+		ctx.Abort()
 	})
 }
 

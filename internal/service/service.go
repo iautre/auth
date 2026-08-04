@@ -629,7 +629,7 @@ func (o *OIDCService) GetDiscoveryDocumentWithPrefix(prefix string) *dto.OIDCDis
 	return &dto.OIDCDiscoveryResponse{
 		Issuer:                baseURL,
 		AuthorizationEndpoint: buildEndpoint("/oauth2/auth"),
-		TokenEndpoint:         buildEndpoint("/oauth2/token"),
+		TokenEndpoint:         buildEndpoint("/oidc/token"),
 		UserInfoEndpoint:      buildEndpoint("/oidc/userinfo"),
 		JwksUri:               buildEndpoint("/oidc/jwks"),
 		ScopesSupported:       []string{"openid", "profile", "email", "phone"},

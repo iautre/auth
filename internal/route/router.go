@@ -41,7 +41,8 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	ro.POST("/oauth2/token", o.OAuth2Token)
 
 	// OIDC endpoints
-	ro.GET("/.well-known/openid_configuration", o.OIDCDiscovery)
+	ro.GET("/.well-known/openid-configuration", o.OIDCDiscovery)
+	ro.POST("/oidc/token", o.OIDCToken)
 	ro.GET("/oidc/userinfo", handler.OAuth2TokenMiddleware, o.OIDCUserInfo)
 	ro.GET("/oidc/jwks", o.OIDCJwks)
 

@@ -27,7 +27,8 @@ func TestMountRegistersCompleteHTTPRoutes(t *testing.T) {
 		"POST /api/auth/user/:userId/reset-otp":               false,
 		"GET /api/auth/oauth2/auth":                           false,
 		"POST /api/auth/oauth2/token":                         false,
-		"GET /api/auth/.well-known/openid_configuration":      false,
+		"GET /api/auth/.well-known/openid-configuration":      false,
+		"POST /api/auth/oidc/token":                           false,
 		"GET /api/auth/oidc/userinfo":                         false,
 		"GET /api/auth/oidc/jwks":                             false,
 		"POST /api/auth/oauth2/clients":                       false,
@@ -51,31 +52,33 @@ func TestMountRegistersCompleteHTTPRoutes(t *testing.T) {
 	}
 }
 
-func TestMountPrefixIsUsedByOIDCDiscovery(t *testing.T) {
+func TestMountOIDCDiscoveryIsUnwrapped(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	authhttp.Mount(router, authhttp.Options{Prefix: "/embedded/auth"})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/embedded/auth/.well-known/openid_configuration", nil)
+	request := httptest.NewRequest(http.MethodGet, "/embedded/auth/.well-known/openid-configuration", nil)
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
 
 	var response struct {
-		Data struct {
-			TokenEndpoint string `json:"token_endpoint"`
-			JwksURI       string `json:"jwks_uri"`
-		} `json:"data"`
+		Issuer        string `json:"issuer"`
+		TokenEndpoint string `json:"token_endpoint"`
+		Data          any    `json:"data"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if !strings.HasSuffix(response.Data.TokenEndpoint, "/embedded/auth/oauth2/token") {
-		t.Fatalf("token_endpoint = %q", response.Data.TokenEndpoint)
+	if response.Issuer == "" {
+		t.Fatal("issuer is empty")
 	}
-	if !strings.HasSuffix(response.Data.JwksURI, "/embedded/auth/oidc/jwks") {
-		t.Fatalf("jwks_uri = %q", response.Data.JwksURI)
+	if !strings.HasSuffix(response.TokenEndpoint, "/embedded/auth/oidc/token") {
+		t.Fatalf("token_endpoint = %q", response.TokenEndpoint)
+	}
+	if response.Data != nil {
+		t.Fatalf("standard discovery must not use gowk data envelope: %#v", response.Data)
 	}
 }

@@ -270,9 +270,29 @@ func (o *OAuth2Handler) OAuth2Token(ctx *gin.Context) {
 	gowk.Response(ctx, http.StatusOK, response, nil)
 }
 
+// OIDCToken 返回 RFC 6749/OIDC 客户端预期的顶层 token 字段。
+func (o *OAuth2Handler) OIDCToken(ctx *gin.Context) {
+	var params dto.OAuth2TokenRequest
+	if err := ctx.ShouldBind(&params); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": err.Error()})
+		ctx.Abort()
+		return
+	}
+
+	response, err := o.oauth2Service.ExchangeToken(ctx, &params)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": err.Error()})
+		ctx.Abort()
+		return
+	}
+	ctx.JSON(http.StatusOK, response)
+	ctx.Abort()
+}
+
 func (o *OAuth2Handler) OIDCDiscovery(ctx *gin.Context) {
 	discovery := o.oidcService.GetDiscoveryDocumentWithPrefix(o.apiPrefix)
-	gowk.Response(ctx, http.StatusOK, discovery, nil)
+	ctx.JSON(http.StatusOK, discovery)
+	ctx.Abort()
 }
 
 func (o *OAuth2Handler) OIDCUserInfo(ctx *gin.Context) {
@@ -295,12 +315,14 @@ func (o *OAuth2Handler) OIDCUserInfo(ctx *gin.Context) {
 		gowk.Response(ctx, http.StatusBadRequest, nil, err)
 		return
 	}
-	gowk.Response(ctx, http.StatusOK, userInfo, nil)
+	ctx.JSON(http.StatusOK, userInfo)
+	ctx.Abort()
 }
 
 func (o *OAuth2Handler) OIDCJwks(ctx *gin.Context) {
 	jwks := o.oidcService.GetJwks(ctx.Request.Context())
-	gowk.Response(ctx, http.StatusOK, jwks, nil)
+	ctx.JSON(http.StatusOK, jwks)
+	ctx.Abort()
 }
 
 // GrpcHandler 处理gRPC相关的请求

@@ -7,7 +7,7 @@ SERVER    := root@upload.autre.cn
 HTTP_PORT := 8087
 GRPC_PORT := 50051
 
-# 部署密钥从 gitignore 的 .env 读取（DATABASE_DSN / EMQX_AUTH_KEY）
+# 部署环境从 gitignore 的 .env 读取（BASE_URL / DATABASE_DSN / EMQX_AUTH_KEY）
 -include .env
 
 # 构建运行时：有 container(Apple) 用 container，否则 docker
@@ -122,6 +122,7 @@ restart:
 			--restart always \
 			-e HTTP_SERVER_ADDR=:$(HTTP_PORT) \
 			-e GRPC_SERVER_ADDR=:$(GRPC_PORT) \
+			-e BASE_URL=$(BASE_URL) \
 			-e DATABASE_DSN="$(DATABASE_DSN)" \
 			-e REDIS_ADDR=redis:6379 \
 			-e EMQX_AUTH_KEY=$(EMQX_AUTH_KEY) \
