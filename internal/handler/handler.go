@@ -290,6 +290,9 @@ func (o *OAuth2Handler) OIDCToken(ctx *gin.Context) {
 }
 
 func (o *OAuth2Handler) OIDCDiscovery(ctx *gin.Context) {
+	// Discovery 只包含公开的 OIDC 元数据，允许浏览器端客户端跨域自动发现。
+	// Token / UserInfo 等携带凭据的端点不开放 CORS。
+	ctx.Header("Access-Control-Allow-Origin", "*")
 	discovery := o.oidcService.GetDiscoveryDocumentWithPrefix(o.apiPrefix)
 	ctx.JSON(http.StatusOK, discovery)
 	ctx.Abort()

@@ -63,6 +63,9 @@ func TestMountOIDCDiscoveryIsUnwrapped(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
 	}
+	if origin := recorder.Header().Get("Access-Control-Allow-Origin"); origin != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want *", origin)
+	}
 
 	var response struct {
 		Issuer        string `json:"issuer"`
