@@ -23,7 +23,6 @@ import (
 	"github.com/iautre/auth/internal/config"
 	db2 "github.com/iautre/auth/internal/db"
 	"github.com/iautre/auth/pkg/dto"
-	"github.com/iautre/auth/pkg/util"
 	"github.com/iautre/gowk"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -70,9 +69,12 @@ func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.A
 		return db2.AuthUser{}, gowk.NewError("account is disabled")
 	}
 
-	// Verify OTP code
-	var otp util.OTP
-	if !otp.CheckCode(user.Secret.String, params.Code) {
+	var otpService OTPService
+	verified, err := otpService.VerifyLogin(ctx, user.ID, params.Code)
+	if err != nil {
+		return db2.AuthUser{}, fmt.Errorf("verify OTP: %w", err)
+	}
+	if !verified {
 		return db2.AuthUser{}, gowk.NewError("invalid verification code")
 	}
 
@@ -111,17 +113,8 @@ func (u *UserService) ResetOTPCode(ctx context.Context, userId int64) (string, e
 	if userId <= 0 {
 		return "", gowk.NewError("invalid user ID")
 	}
-	newSecret, err := util.GenerateOTPSecret()
-	if err != nil {
-		return "", fmt.Errorf("generate otp secret: %w", err)
-	}
-	if err := u.getQueries(ctx).UpdateUserSecret(ctx, db2.UpdateUserSecretParams{
-		ID:     userId,
-		Secret: pgtype.Text{String: newSecret, Valid: true},
-	}); err != nil {
-		return "", fmt.Errorf("update user secret: %w", err)
-	}
-	return newSecret, nil
+	var otpService OTPService
+	return otpService.ResetCredentials(ctx, userId)
 }
 
 // UpdateLoginInfo 更新用户最近登录时间并自增登录计数。

@@ -40,6 +40,12 @@ type UserRes struct {
 	Created     string `json:"created"`
 }
 
+type ProfileUpdateParams struct {
+	Phone    string `json:"phone" binding:"required"`
+	Email    string `json:"email" binding:"required"`
+	Nickname string `json:"nickname" binding:"required"`
+}
+
 // User status update parameters
 type UserStatusUpdateParams struct {
 	UserId int64 `json:"userId" binding:"required"`

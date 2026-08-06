@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const lockUserForCredentialChange = `-- name: LockUserForCredentialChange :one
+SELECT id
+FROM public.auth_user
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockUserForCredentialChange(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, lockUserForCredentialChange, id)
+	err := row.Scan(&id)
+	return id, err
+}
+
 const updateUserLoginInfo = `-- name: UpdateUserLoginInfo :exec
 UPDATE public.auth_user
 SET last_login_at = NOW(),
@@ -24,25 +37,37 @@ func (q *Queries) UpdateUserLoginInfo(ctx context.Context, id int64) error {
 	return err
 }
 
-const updateUserSecret = `-- name: UpdateUserSecret :exec
+const updateUserProfile = `-- name: UpdateUserProfile :execrows
 UPDATE public.auth_user
-SET secret  = $2,
+SET phone = $2,
+    email = $3,
+    nickname = $4,
     updated = NOW()
 WHERE id = $1
 `
 
-type UpdateUserSecretParams struct {
-	ID     int64       `json:"id"`
-	Secret pgtype.Text `json:"secret"`
+type UpdateUserProfileParams struct {
+	ID       int64       `json:"id"`
+	Phone    pgtype.Text `json:"phone"`
+	Email    pgtype.Text `json:"email"`
+	Nickname pgtype.Text `json:"nickname"`
 }
 
-func (q *Queries) UpdateUserSecret(ctx context.Context, arg UpdateUserSecretParams) error {
-	_, err := q.db.Exec(ctx, updateUserSecret, arg.ID, arg.Secret)
-	return err
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUserProfile,
+		arg.ID,
+		arg.Phone,
+		arg.Email,
+		arg.Nickname,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const userById = `-- name: UserById :one
-SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, secret, last_login_at, login_count, avatar, is_verified
+SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, last_login_at, login_count, avatar, is_verified
 FROM public.auth_user
 WHERE id = $1
 `
@@ -60,7 +85,6 @@ func (q *Queries) UserById(ctx context.Context, id int64) (AuthUser, error) {
 		&i.Created,
 		&i.Updated,
 		&i.Aid,
-		&i.Secret,
 		&i.LastLoginAt,
 		&i.LoginCount,
 		&i.Avatar,
@@ -70,7 +94,7 @@ func (q *Queries) UserById(ctx context.Context, id int64) (AuthUser, error) {
 }
 
 const userByPhone = `-- name: UserByPhone :one
-SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, secret, last_login_at, login_count, avatar, is_verified
+SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, last_login_at, login_count, avatar, is_verified
 FROM public.auth_user
 WHERE phone = $1
 `
@@ -88,7 +112,6 @@ func (q *Queries) UserByPhone(ctx context.Context, phone pgtype.Text) (AuthUser,
 		&i.Created,
 		&i.Updated,
 		&i.Aid,
-		&i.Secret,
 		&i.LastLoginAt,
 		&i.LoginCount,
 		&i.Avatar,

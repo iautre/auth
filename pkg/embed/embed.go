@@ -1,8 +1,8 @@
 // Package embed 提供将 auth 以「远程（gRPC）」方式嵌入其他系统的 gin 中间件与登录路由。
 //
-// 本包是 client-only：仅依赖 auth 的 pkg/client、pkg/proto、pkg/dto 与 gowk，
-// 不引用任何 internal 包，因此可被其他服务通过 go get 远程依赖，
-// 无需 auth 的 internal/db 等服务端生成代码。
+// 远程认证和用户查询始终通过 pkg/client 的 gRPC 客户端完成。浏览器登录页复用
+// Auth 的共享渲染器，避免独立 HTTP、本地 SDK、远程 SDK 三种方式出现不同的
+// 登录界面或跳转安全策略；不会初始化 Auth 的数据库或服务端进程。
 //
 // 通过环境变量 AUTH_GRPC_ADDR 指向远程 auth gRPC 服务（如 auth:50051）。
 // 早期的 local（与 auth 共享数据库、直连 internal/service）模式已移除；
@@ -14,6 +14,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/internal/handler"
 	authclient "github.com/iautre/auth/pkg/client"
 	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
@@ -93,7 +94,9 @@ func (m *Middlewares) loginHandler() gin.HandlerFunc {
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
-// Setup 以远程模式挂载 auth 的 HTTP 路由与中间件，并注册登录接口 prefix + "/login"。
+// Setup 以远程模式挂载 auth 的 HTTP 路由与中间件，并注册统一登录页与登录接口
+// prefix + "/login"。登录成功后，页面将返回的 token 存入宿主同源 localStorage
+// 的 "token" 键，并只允许跳转到宿主的相对路径。
 // 需要环境变量 AUTH_GRPC_ADDR 指向 auth gRPC 服务（如 auth:50051）。
 //
 // 调用方只需：
@@ -116,6 +119,11 @@ func Setup(router *gin.Engine, prefix string) *Middlewares {
 		CheckAdmin: checkAdmin(),
 		doLogin:    remoteDoLogin(c),
 	}
+	router.GET(prefix+"/login", handler.BrowserLoginPage(handler.BrowserLoginPageOptions{
+		DefaultReturnTo:       "/",
+		AllowRelativeReturnTo: true,
+		TokenStorageKey:       "token",
+	}))
 	router.POST(prefix+"/login", mw.loginHandler())
 	return mw
 }

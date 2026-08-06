@@ -119,21 +119,7 @@ func (u *UserHandler) UserInfo(ctx *gin.Context) {
 		return
 	}
 
-	// Create user response with additional fields
-	userRes := dto.UserRes{
-		Id:          user.ID,
-		Phone:       user.Phone.String,
-		Email:       user.Email.String,
-		Nickname:    user.Nickname.String,
-		Group:       user.Group.String,
-		Avatar:      user.Avatar.String,
-		IsVerified:  user.IsVerified.Bool,
-		Enabled:     user.Enabled,
-		LastLoginAt: user.LastLoginAt.Time.Format("2006-01-02T15:04:05Z"),
-		Created:     user.Created.Time.Format("2006-01-02T15:04:05Z"),
-	}
-
-	gowk.Response(ctx, http.StatusOK, userRes, nil)
+	gowk.Response(ctx, http.StatusOK, userResponse(user), nil)
 }
 
 // SSOLogin 暂未实现，明确返回 501 以避免下游误以为可用。

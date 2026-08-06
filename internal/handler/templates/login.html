@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 Auth</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      color: #18212f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 15% 15%, rgba(68, 112, 255, .16), transparent 32%),
+        radial-gradient(circle at 85% 80%, rgba(36, 194, 151, .13), transparent 30%),
+        #f4f6f8;
+    }
+    main {
+      width: min(100%, 420px);
+      padding: 36px;
+      border: 1px solid rgba(24, 33, 47, .09);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 24px 70px rgba(37, 47, 68, .12);
+      backdrop-filter: blur(18px);
+    }
+    .brand {
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 24px;
+      border-radius: 13px;
+      color: white;
+      font-weight: 750;
+      letter-spacing: -.04em;
+      background: linear-gradient(135deg, #315efb, #7147e8);
+    }
+    h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -.025em; }
+    .subtitle { margin: 0 0 28px; color: #667085; line-height: 1.55; }
+    label { display: block; margin: 18px 0 8px; font-size: 14px; font-weight: 650; }
+    input {
+      width: 100%;
+      height: 48px;
+      padding: 0 14px;
+      border: 1px solid #d8dee8;
+      border-radius: 11px;
+      outline: none;
+      background: #fff;
+      color: #18212f;
+      font: inherit;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus { border-color: #5674f4; box-shadow: 0 0 0 4px rgba(86, 116, 244, .13); }
+    button {
+      width: 100%;
+      height: 48px;
+      margin-top: 24px;
+      border: 0;
+      border-radius: 11px;
+      color: #fff;
+      background: #315efb;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .15s, opacity .15s;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: .65; transform: none; }
+    button.secondary {
+      margin-top: 12px;
+      color: #344054;
+      border: 1px solid #d8dee8;
+      background: #fff;
+    }
+    dialog {
+      width: min(calc(100% - 28px), 420px);
+      max-height: calc(100dvh - 28px);
+      padding: 0;
+      border: 0;
+      border-radius: 18px;
+      color: inherit;
+      background: #fff;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, .28);
+    }
+    dialog::backdrop { background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px); }
+    .dialog-body { padding: 28px; overflow: auto; }
+    .dialog-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .dialog-actions button { margin-top: 0; }
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 22px 0 0;
+      color: #98a2b3;
+      font-size: 13px;
+    }
+    .divider::before, .divider::after { content: ""; height: 1px; flex: 1; background: #e4e7ec; }
+    [hidden] { display: none !important; }
+    #error {
+      min-height: 21px;
+      margin: 14px 0 -6px;
+      color: #d92d20;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    #error.info { color: #475467; }
+    #passkey-name-message { min-height: 21px; margin: 12px 0 0; color: #d92d20; font-size: 14px; }
+    .account-link { margin: 16px 0 0; text-align: center; font-size: 14px; }
+    .account-link a { color: #315efb; text-decoration: none; }
+    .account-link a:hover { text-decoration: underline; }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #0e1118; color: #f2f4f7; }
+      body { background: radial-gradient(circle at 20% 10%, rgba(74, 99, 227, .25), transparent 34%), #0e1118; }
+      main { border-color: rgba(255,255,255,.1); background: rgba(21, 26, 36, .94); box-shadow: 0 24px 70px rgba(0,0,0,.34); }
+      .subtitle { color: #98a2b3; }
+      input { border-color: #353d4c; background: #111722; color: #f2f4f7; }
+      button.secondary { border-color: #353d4c; background: #111722; color: #f2f4f7; }
+      .divider::before, .divider::after { background: #353d4c; }
+      #error.info { color: #98a2b3; }
+      dialog { background: #151a24; }
+    }
+    @media (max-width: 480px) {
+      body { padding: 14px; }
+      main { padding: 24px 20px; }
+      .dialog-body { padding: 22px 20px; }
+      .dialog-actions { flex-direction: column-reverse; }
+    }
+  </style>
+</head>
+<body>
+  <main id="login"
+        data-login-path="{{.LoginPath}}"
+        data-passkey-status-path="{{.PasskeyStatusPath}}"
+        data-passkey-credentials-path="{{.PasskeyCredentialsPath}}"
+        data-passkey-register-begin-path="{{.PasskeyRegisterBeginPath}}"
+        data-passkey-register-finish-path="{{.PasskeyRegisterFinishPath}}"
+        data-passkey-login-begin-path="{{.PasskeyLoginBeginPath}}"
+        data-passkey-login-finish-path="{{.PasskeyLoginFinishPath}}"
+		data-return-to="{{.ReturnTo}}"
+        data-token-storage-key="{{.TokenStorageKey}}"
+        data-passkey-enabled="{{.PasskeyEnabled}}">
+    <div class="brand" aria-hidden="true">A</div>
+    <h1>登录 Auth</h1>
+    <p class="subtitle">验证身份后继续授权当前应用。</p>
+    <form id="login-form">
+      <label for="account">手机号</label>
+      <input id="account" name="account" type="tel" autocomplete="username" inputmode="tel" required autofocus>
+      <label for="code">动态验证码</label>
+      <input id="code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required>
+      <button id="submit" type="submit">登录并继续</button>
+    </form>
+    <div id="passkey-entry"{{if not .PasskeyEnabled}} hidden{{end}}>
+      <div class="divider">或</div>
+      <button id="passkey-login" class="secondary" type="button">使用通行密钥</button>
+    </div>
+    <section id="passkey-enrollment" hidden>
+      <h1>设置通行密钥</h1>
+      <p class="subtitle">下次可使用指纹、面容或设备解锁直接登录。</p>
+      <button id="passkey-register" type="button">创建通行密钥并继续</button>
+      <button id="passkey-skip" class="secondary" type="button">暂时跳过</button>
+    </section>
+    <p id="error" role="alert" aria-live="polite"></p>
+    {{if .ShowAccountLink}}<p class="account-link"><a href="{{.AccountPath}}">个人中心 / 管理通行密钥</a></p>{{end}}
+  </main>
+  <dialog id="passkey-name-dialog" aria-labelledby="passkey-name-title">
+    <div class="dialog-body">
+      <h1 id="passkey-name-title">为通行密钥命名</h1>
+      <p id="passkey-name-description" class="subtitle"></p>
+      <label for="passkey-name-input">通行密钥名称</label>
+      <input id="passkey-name-input" type="text" maxlength="50" autocomplete="off">
+      <p id="passkey-name-message" role="alert" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="passkey-name-skip" class="secondary" type="button">稍后设置</button>
+        <button id="passkey-name-save" type="button">保存并继续</button>
+      </div>
+    </div>
+  </dialog>
+  <script>
+    const container = document.getElementById('login');
+    const form = document.getElementById('login-form');
+    const button = document.getElementById('submit');
+    const passkeyEntry = document.getElementById('passkey-entry');
+    const passkeyLogin = document.getElementById('passkey-login');
+    const enrollment = document.getElementById('passkey-enrollment');
+    const passkeyRegister = document.getElementById('passkey-register');
+    const passkeySkip = document.getElementById('passkey-skip');
+    const errorMessage = document.getElementById('error');
+    const passkeyNameDialog = document.getElementById('passkey-name-dialog');
+    const passkeyNameInput = document.getElementById('passkey-name-input');
+    const passkeyNameMessage = document.getElementById('passkey-name-message');
+    const passkeyNameSave = document.getElementById('passkey-name-save');
+    const passkeySupported = typeof window.PublicKeyCredential !== 'undefined' && !!navigator.credentials;
+	const passkeyEnabled = container.dataset.passkeyEnabled === 'true';
+    let passkeyLoginAttempt = null;
+    let passkeyRegistrationAttempt = null;
+    let passkeyNameCredential = null;
+    let passkeyNameResolve = null;
+
+    if (!passkeySupported || !passkeyEnabled) passkeyEntry.hidden = true;
+
+    function redirectToApplication() {
+      window.location.replace(container.dataset.returnTo);
+    }
+
+    function persistLoginToken(loginResult) {
+      const storageKey = container.dataset.tokenStorageKey;
+      if (storageKey && loginResult?.token) {
+        localStorage.setItem(storageKey, loginResult.token);
+      }
+    }
+
+    function setLoginMessage(message, isError = true) {
+      errorMessage.textContent = message;
+      errorMessage.classList.toggle('info', !!message && !isError);
+    }
+
+    function browserLabel(userAgent) {
+      if (/Edg\//.test(userAgent)) return 'Edge';
+      if (/Firefox\//.test(userAgent)) return 'Firefox';
+      if (/Chrome\//.test(userAgent)) return 'Chrome';
+      if (/Safari\//.test(userAgent)) return 'Safari';
+      return '';
+    }
+
+    function platformLabel(platform) {
+      const labels = { MacIntel: 'macOS', Win32: 'Windows', iPhone: 'iPhone', iPad: 'iPad' };
+      return labels[platform] || platform;
+    }
+
+    function deviceInfoLabel(info = {}) {
+      const parts = [];
+      const device = info.model || platformLabel(info.platform || '');
+      if (device) parts.push(device);
+      const browser = browserLabel(info.user_agent || '');
+      if (browser) parts.push(browser);
+      if (info.mobile && !device) parts.push('移动设备');
+      return parts.join(' · ') || '设备信息未知';
+    }
+
+    function suggestedPasskeyName(credential) {
+      const label = deviceInfoLabel(credential.device_info);
+      const value = label === '设备信息未知' ? '我的通行密钥' : label;
+      return Array.from(value).slice(0, 50).join('');
+    }
+
+    async function collectDeviceInfo() {
+      const userAgentData = navigator.userAgentData;
+      const info = {
+        user_agent: navigator.userAgent || '',
+        platform: userAgentData?.platform || navigator.platform || '',
+        platform_version: '',
+        model: '',
+        mobile: userAgentData?.mobile ?? /Mobi|Android/i.test(navigator.userAgent || '')
+      };
+      if (typeof userAgentData?.getHighEntropyValues === 'function') {
+        try {
+          const details = await userAgentData.getHighEntropyValues(['model', 'platformVersion']);
+          info.model = details.model || '';
+          info.platform_version = details.platformVersion || '';
+        } catch {
+          // Basic browser-provided device information is still available.
+        }
+      }
+      return info;
+    }
+
+    function closePasskeyNameDialog(saved) {
+      passkeyNameDialog.close();
+      passkeyNameCredential = null;
+      const resolve = passkeyNameResolve;
+      passkeyNameResolve = null;
+      if (resolve) resolve(saved);
+    }
+
+    function openPasskeyNameDialog(credential) {
+      passkeyNameCredential = credential;
+      document.getElementById('passkey-name-description').textContent =
+        `通行密钥已绑定，识别到的设备：${deviceInfoLabel(credential.device_info)}。`;
+      passkeyNameInput.value = credential.name || suggestedPasskeyName(credential);
+      passkeyNameMessage.textContent = '';
+      passkeyNameSave.disabled = false;
+      passkeyNameDialog.showModal();
+      passkeyNameInput.focus();
+      passkeyNameInput.select();
+      return new Promise(resolve => { passkeyNameResolve = resolve; });
+    }
+
+    document.getElementById('passkey-name-skip').addEventListener('click', () => {
+      closePasskeyNameDialog(false);
+    });
+
+    passkeyNameDialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      closePasskeyNameDialog(false);
+    });
+
+    passkeyNameSave.addEventListener('click', async () => {
+      const name = passkeyNameInput.value.trim();
+      if (!name) {
+        passkeyNameMessage.textContent = '请填写通行密钥名称';
+        passkeyNameInput.focus();
+        return;
+      }
+      if (!passkeyNameCredential) return;
+      passkeyNameSave.disabled = true;
+      passkeyNameMessage.textContent = '';
+      try {
+        await requestJSON(`${container.dataset.passkeyCredentialsPath}/${passkeyNameCredential.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name })
+        });
+        closePasskeyNameDialog(true);
+      } catch (error) {
+        passkeyNameMessage.textContent = error instanceof Error ? error.message : '保存名称失败';
+        passkeyNameSave.disabled = false;
+      }
+    });
+
+    passkeyNameInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        passkeyNameSave.click();
+      }
+    });
+
+    function resetPasskeyLoginButton() {
+      passkeyLogin.disabled = false;
+      passkeyLogin.textContent = '使用通行密钥';
+    }
+
+    function cancelPasskeyLogin(message = '已取消通行密钥验证', isError = false) {
+      const attempt = passkeyLoginAttempt;
+      if (!attempt) return;
+      passkeyLoginAttempt = null;
+      attempt.cancelled = true;
+      if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+      if (attempt.controller) attempt.controller.abort();
+      resetPasskeyLoginButton();
+      setLoginMessage(message, isError);
+    }
+
+    function resetPasskeyRegistrationButton() {
+      passkeyRegister.disabled = false;
+      passkeyRegister.textContent = '创建通行密钥并继续';
+      passkeyRegister.classList.remove('secondary');
+    }
+
+    function cancelPasskeyRegistration(message = '已取消创建通行密钥', isError = false) {
+      const attempt = passkeyRegistrationAttempt;
+      if (!attempt) return;
+      passkeyRegistrationAttempt = null;
+      attempt.cancelled = true;
+      if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+      if (attempt.controller) attempt.controller.abort();
+      resetPasskeyRegistrationButton();
+      setLoginMessage(message, isError);
+    }
+
+    function decodeBase64URL(value) {
+      const base64 = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+      const bytes = Uint8Array.from(atob(base64), character => character.charCodeAt(0));
+      return bytes.buffer;
+    }
+
+    function encodeBase64URL(value) {
+      const bytes = new Uint8Array(value);
+      let binary = '';
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function decodeCredentialOptions(options) {
+      const publicKey = structuredClone(options.publicKey || options);
+      publicKey.challenge = decodeBase64URL(publicKey.challenge);
+      if (publicKey.user?.id) publicKey.user.id = decodeBase64URL(publicKey.user.id);
+      for (const key of ['allowCredentials', 'excludeCredentials']) {
+        if (Array.isArray(publicKey[key])) {
+          publicKey[key] = publicKey[key].map(item => ({ ...item, id: decodeBase64URL(item.id) }));
+        }
+      }
+      return publicKey;
+    }
+
+    function encodeCredential(credential) {
+      const response = {
+        clientDataJSON: encodeBase64URL(credential.response.clientDataJSON)
+      };
+      if ('attestationObject' in credential.response) {
+        response.attestationObject = encodeBase64URL(credential.response.attestationObject);
+        if (typeof credential.response.getTransports === 'function') {
+          response.transports = credential.response.getTransports();
+        }
+      } else {
+        response.authenticatorData = encodeBase64URL(credential.response.authenticatorData);
+        response.signature = encodeBase64URL(credential.response.signature);
+        response.userHandle = credential.response.userHandle ? encodeBase64URL(credential.response.userHandle) : null;
+      }
+      return {
+        id: credential.id,
+        rawId: encodeBase64URL(credential.rawId),
+        type: credential.type,
+        response,
+        clientExtensionResults: credential.getClientExtensionResults()
+      };
+    }
+
+    async function requestJSON(path, options = {}) {
+      const response = await fetch(path, {
+        credentials: 'same-origin',
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.code !== 0) {
+        throw new Error(payload.message || '操作失败，请重试');
+      }
+      return payload.data;
+    }
+
+    async function offerPasskeyEnrollment() {
+      if (!passkeySupported) {
+        redirectToApplication();
+        return;
+      }
+      try {
+        const status = await requestJSON(container.dataset.passkeyStatusPath, { method: 'GET' });
+        if (status?.has_passkey) {
+          redirectToApplication();
+          return;
+        }
+        form.hidden = true;
+        passkeyEntry.hidden = true;
+        enrollment.hidden = false;
+        setLoginMessage('', false);
+      } catch {
+        redirectToApplication();
+      }
+    }
+
+    async function offerEnrollmentForExistingSession() {
+      if (!passkeySupported) return;
+      try {
+        const status = await requestJSON(container.dataset.passkeyStatusPath, { method: 'GET' });
+        if (!status?.has_passkey) {
+          form.hidden = true;
+          passkeyEntry.hidden = true;
+          enrollment.hidden = false;
+        }
+      } catch {
+        // Anonymous visitors continue with OTP or Passkey login.
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      button.textContent = '正在登录…';
+      setLoginMessage('', false);
+
+      try {
+        const loginResult = await requestJSON(container.dataset.loginPath, {
+          method: 'POST',
+          body: JSON.stringify({
+            account: form.elements.account.value.trim(),
+            code: form.elements.code.value.trim()
+          })
+        });
+        persistLoginToken(loginResult);
+        if (!passkeyEnabled) {
+          redirectToApplication();
+          return;
+        }
+        await offerPasskeyEnrollment();
+      } catch (error) {
+        setLoginMessage(error instanceof Error ? error.message : '登录失败，请重试');
+        button.disabled = false;
+        button.textContent = '登录并继续';
+      }
+    });
+
+    passkeyLogin.addEventListener('click', async () => {
+      if (passkeyLoginAttempt) {
+        cancelPasskeyLogin();
+        return;
+      }
+
+      const attempt = { controller: null, timeoutID: null, cancelled: false };
+      passkeyLoginAttempt = attempt;
+      passkeyLogin.disabled = true;
+      passkeyLogin.textContent = '正在准备…';
+      setLoginMessage('', false);
+      try {
+        const begin = await requestJSON(container.dataset.passkeyLoginBeginPath, { method: 'POST', body: '{}' });
+        if (attempt.cancelled || passkeyLoginAttempt !== attempt) return;
+
+        attempt.controller = new AbortController();
+        attempt.timeoutID = window.setTimeout(() => {
+          if (passkeyLoginAttempt === attempt) {
+            cancelPasskeyLogin('通行密钥验证已超时，请重试', true);
+          }
+        }, 120000);
+        passkeyLogin.disabled = false;
+        passkeyLogin.textContent = '取消验证';
+        setLoginMessage('请在弹出的验证器中完成验证；关闭弹窗后可点击“取消验证”。', false);
+        const credential = await navigator.credentials.get({
+          publicKey: decodeCredentialOptions(begin.options),
+          signal: attempt.controller.signal
+        });
+        if (attempt.cancelled || passkeyLoginAttempt !== attempt) return;
+        if (!credential) throw new Error('未选择通行密钥');
+
+        if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+        attempt.timeoutID = null;
+        passkeyLogin.disabled = true;
+        passkeyLogin.textContent = '正在登录…';
+        await requestJSON(container.dataset.passkeyLoginFinishPath, {
+          method: 'POST',
+          body: JSON.stringify({ flow_token: begin.flow_token, credential: encodeCredential(credential) })
+        });
+        if (attempt.cancelled || passkeyLoginAttempt !== attempt) return;
+        redirectToApplication();
+      } catch (error) {
+        if (!attempt.cancelled) {
+          const aborted = error instanceof DOMException && error.name === 'AbortError';
+          setLoginMessage(aborted
+            ? '已取消通行密钥验证'
+            : error instanceof Error
+              ? error.message
+              : '通行密钥登录失败', !aborted);
+        }
+      } finally {
+        if (passkeyLoginAttempt === attempt) {
+          if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+          passkeyLoginAttempt = null;
+          resetPasskeyLoginButton();
+        }
+      }
+    });
+
+    passkeyRegister.addEventListener('click', async () => {
+      if (passkeyRegistrationAttempt) {
+        cancelPasskeyRegistration();
+        return;
+      }
+
+      const attempt = { controller: null, timeoutID: null, cancelled: false };
+      passkeyRegistrationAttempt = attempt;
+      passkeyRegister.disabled = true;
+      passkeyRegister.textContent = '正在准备…';
+      setLoginMessage('', false);
+      try {
+        const deviceInfo = await collectDeviceInfo();
+        const begin = await requestJSON(container.dataset.passkeyRegisterBeginPath, { method: 'POST', body: '{}' });
+        if (attempt.cancelled || passkeyRegistrationAttempt !== attempt) return;
+
+        attempt.controller = new AbortController();
+        attempt.timeoutID = window.setTimeout(() => {
+          if (passkeyRegistrationAttempt === attempt) {
+            cancelPasskeyRegistration('创建通行密钥已超时，请重试', true);
+          }
+        }, 120000);
+        passkeyRegister.disabled = false;
+        passkeyRegister.textContent = '取消创建';
+        passkeyRegister.classList.add('secondary');
+        setLoginMessage('请在弹出的验证器中完成创建；关闭弹窗后可点击“取消创建”。', false);
+        const credential = await navigator.credentials.create({
+          publicKey: decodeCredentialOptions(begin.options),
+          signal: attempt.controller.signal
+        });
+        if (attempt.cancelled || passkeyRegistrationAttempt !== attempt) return;
+        if (!credential) throw new Error('未创建通行密钥');
+
+        if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+        attempt.timeoutID = null;
+        passkeyRegister.disabled = true;
+        passkeyRegister.textContent = '正在保存…';
+        passkeyRegister.classList.remove('secondary');
+        const createdCredential = await requestJSON(container.dataset.passkeyRegisterFinishPath, {
+          method: 'POST',
+          body: JSON.stringify({
+            flow_token: begin.flow_token,
+            credential: encodeCredential(credential),
+            device_info: deviceInfo
+          })
+        });
+        if (attempt.cancelled || passkeyRegistrationAttempt !== attempt) return;
+        await openPasskeyNameDialog(createdCredential);
+        redirectToApplication();
+      } catch (error) {
+        if (!attempt.cancelled) {
+          const aborted = error instanceof DOMException && error.name === 'AbortError';
+          setLoginMessage(aborted
+            ? '已取消创建通行密钥'
+            : error instanceof Error
+              ? error.message
+              : '创建通行密钥失败', !aborted);
+        }
+      } finally {
+        if (passkeyRegistrationAttempt === attempt) {
+          if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+          passkeyRegistrationAttempt = null;
+          resetPasskeyRegistrationButton();
+        }
+      }
+    });
+
+    passkeySkip.addEventListener('click', () => {
+      if (passkeyRegistrationAttempt) cancelPasskeyRegistration('');
+      redirectToApplication();
+    });
+    if (passkeyEnabled) void offerEnrollmentForExistingSession();
+  </script>
+</body>
+</html>

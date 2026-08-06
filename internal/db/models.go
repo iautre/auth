@@ -68,6 +68,56 @@ type AuthOidcJwk struct {
 	Updated    pgtype.Timestamptz `json:"updated"`
 }
 
+type AuthOtpCredential struct {
+	ID         int64              `json:"id"`
+	UserID     int64              `json:"user_id"`
+	Name       string             `json:"name"`
+	Secret     string             `json:"secret"`
+	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
+	Created    pgtype.Timestamptz `json:"created"`
+	Updated    pgtype.Timestamptz `json:"updated"`
+}
+
+type AuthOtpEnrollment struct {
+	Token   string             `json:"token"`
+	UserID  int64              `json:"user_id"`
+	Name    string             `json:"name"`
+	Secret  string             `json:"secret"`
+	Expires pgtype.Timestamptz `json:"expires"`
+	Created pgtype.Timestamptz `json:"created"`
+}
+
+type AuthPasskeyChallenge struct {
+	Token       string             `json:"token"`
+	Purpose     string             `json:"purpose"`
+	UserID      pgtype.Int8        `json:"user_id"`
+	SessionData []byte             `json:"session_data"`
+	Expires     pgtype.Timestamptz `json:"expires"`
+	Created     pgtype.Timestamptz `json:"created"`
+}
+
+type AuthPasskeyCredential struct {
+	ID              int64              `json:"id"`
+	UserID          int64              `json:"user_id"`
+	Name            string             `json:"name"`
+	DeviceInfo      []byte             `json:"device_info"`
+	CredentialID    []byte             `json:"credential_id"`
+	PublicKey       []byte             `json:"public_key"`
+	AttestationType string             `json:"attestation_type"`
+	Transports      string             `json:"transports"`
+	Aaguid          []byte             `json:"aaguid"`
+	SignCount       int64              `json:"sign_count"`
+	CloneWarning    bool               `json:"clone_warning"`
+	UserPresent     bool               `json:"user_present"`
+	UserVerified    bool               `json:"user_verified"`
+	BackupEligible  bool               `json:"backup_eligible"`
+	BackupState     bool               `json:"backup_state"`
+	Attachment      string             `json:"attachment"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	Created         pgtype.Timestamptz `json:"created"`
+	Updated         pgtype.Timestamptz `json:"updated"`
+}
+
 type AuthUser struct {
 	ID          int64              `json:"id"`
 	Phone       pgtype.Text        `json:"phone"`
@@ -78,7 +128,6 @@ type AuthUser struct {
 	Created     pgtype.Timestamptz `json:"created"`
 	Updated     pgtype.Timestamptz `json:"updated"`
 	Aid         pgtype.Text        `json:"aid"`
-	Secret      pgtype.Text        `json:"secret"`
 	LastLoginAt pgtype.Timestamptz `json:"last_login_at"`
 	LoginCount  pgtype.Int4        `json:"login_count"`
 	Avatar      pgtype.Text        `json:"avatar"`

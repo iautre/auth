@@ -41,7 +41,9 @@ func Mount(router *gin.Engine, options Options) *Module {
 	ctx := context.Background()
 
 	userHandler := handler.NewUserHandler(ctx)
+	group.GET("/login", handler.OIDCLoginPage)
 	group.POST("/login", userHandler.Login)
+	group.GET("/account", handler.OAuth2BrowserLogin(group.BasePath()), handler.AccountPage)
 
 	mqttHandler := handler.NewMqttHandler(ctx)
 	group.POST("/mqtt/auth", mqttHandler.Auth)

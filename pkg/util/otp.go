@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -33,7 +32,7 @@ func (o *OTP) CheckCode(secret string, code string) bool {
 func (o *OTP) GetCode(secret string, offset int64) string {
 	key, _ := base32.StdEncoding.DecodeString(secret)
 	epochSeconds := time.Now().Unix() + offset
-	return strconv.FormatInt(int64(o.OneTimePassword(key, o.ToBytes(epochSeconds/30))), 10)
+	return fmt.Sprintf("%06d", o.OneTimePassword(key, o.ToBytes(epochSeconds/30)))
 }
 
 // 获取密码

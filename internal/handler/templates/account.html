@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Auth 个人中心</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      color: #18212f;
+        }
+    * { box-sizing: border-box; }
+    body {
+      min-width: 280px;
+      min-height: 100vh;
+      margin: 0;
+      padding: clamp(16px, 4vw, 40px);
+      padding-top: max(16px, env(safe-area-inset-top));
+      padding-bottom: max(16px, env(safe-area-inset-bottom));
+      background:
+        radial-gradient(circle at 8% 3%, rgba(68, 112, 255, .15), transparent 30%),
+        radial-gradient(circle at 92% 95%, rgba(36, 194, 151, .12), transparent 28%),
+        #f4f6f8;
+    }
+    main { width: min(100%, 1080px); margin: 0 auto; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+    .identity { display: flex; align-items: center; min-width: 0; gap: 14px; }
+    .brand {
+      width: 46px;
+      height: 46px;
+      display: grid;
+      flex: 0 0 auto;
+      place-items: center;
+      border-radius: 14px;
+      color: white;
+      font-weight: 750;
+      letter-spacing: -.04em;
+      background: linear-gradient(135deg, #315efb, #7147e8);
+    }
+    h1, h2, p { margin-top: 0; }
+    h1 { margin-bottom: 2px; font-size: clamp(23px, 4vw, 29px); letter-spacing: -.025em; }
+    h2 { margin-bottom: 6px; font-size: 19px; }
+    .subtitle, .muted { color: #667085; line-height: 1.55; }
+    .subtitle { margin-bottom: 0; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+    .security-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .card {
+      min-width: 0;
+      padding: clamp(18px, 3vw, 26px);
+      border: 1px solid rgba(24, 33, 47, .09);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 16px 50px rgba(37, 47, 68, .08);
+      backdrop-filter: blur(18px);
+    }
+    .section-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+    .profile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+    label { display: block; margin-bottom: 7px; color: #475467; font-size: 13px; font-weight: 650; }
+    input {
+      width: 100%;
+      min-width: 0;
+      height: 46px;
+      padding: 0 13px;
+      border: 1px solid #d8dee8;
+      border-radius: 10px;
+      outline: none;
+      background: #fff;
+      color: #18212f;
+      font: inherit;
+    }
+    input:focus { border-color: #5674f4; box-shadow: 0 0 0 4px rgba(86, 116, 244, .13); }
+    input[readonly] { border-color: transparent; background: #f7f8fa; color: #344054; cursor: default; }
+    input[readonly]:focus { box-shadow: none; }
+    button, .button-link {
+      min-height: 44px;
+      padding: 0 17px;
+      border: 0;
+      border-radius: 10px;
+      color: #fff;
+      background: #315efb;
+      font: inherit;
+      font-weight: 700;
+      line-height: 44px;
+      text-align: center;
+      text-decoration: none;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: transform .15s, opacity .15s;
+    }
+    button:hover, .button-link:hover { transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: .65; transform: none; }
+    button.secondary, .button-link.secondary { color: #344054; border: 1px solid #d8dee8; background: transparent; }
+    button.danger { color: #b42318; border: 1px solid #f1b9b4; background: transparent; }
+    .profile-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+    .credential-list { display: grid; gap: 11px; margin-top: 20px; }
+    .credential {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+      gap: 14px;
+      padding: 15px;
+      border: 1px solid #e4e7ec;
+      border-radius: 12px;
+    }
+    .credential > div { min-width: 0; }
+    .credential-title { margin: 0 0 4px; overflow-wrap: anywhere; font-weight: 700; }
+    .credential-meta { margin: 0; overflow-wrap: anywhere; color: #667085; font-size: 13px; line-height: 1.5; }
+    .credential-actions { display: flex; flex: 0 0 auto; gap: 8px; }
+    .empty { margin: 18px 0 0; padding: 16px; border-radius: 12px; background: #f7f8fa; }
+    .message { min-height: 23px; margin: 13px 2px 0; color: #067647; line-height: 1.5; }
+    .message.error { color: #d92d20; }
+    .security-note { margin: 0; padding: 13px 16px; border-radius: 12px; color: #344054; background: rgba(49, 94, 251, .08); line-height: 1.55; }
+    dialog {
+      width: min(calc(100% - 28px), 480px);
+      max-height: calc(100dvh - 28px);
+      padding: 0;
+      border: 0;
+      border-radius: 18px;
+      color: inherit;
+      background: #fff;
+      box-shadow: 0 28px 90px rgba(0, 0, 0, .28);
+    }
+    dialog::backdrop { background: rgba(15, 23, 42, .55); backdrop-filter: blur(3px); }
+    .dialog-body { padding: clamp(20px, 5vw, 28px); overflow: auto; }
+    .setup-key { display: flex; align-items: stretch; gap: 8px; margin: 14px 0; }
+    .setup-key code { flex: 1; min-width: 0; padding: 13px; border-radius: 9px; overflow-wrap: anywhere; background: #f2f4f7; font-size: 15px; letter-spacing: .08em; }
+    .setup-key button { flex: 0 0 auto; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    [hidden] { display: none !important; }
+    @media (max-width: 860px) {
+      .security-grid { grid-template-columns: 1fr; }
+      .profile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .profile-grid .field:last-child { grid-column: 1 / -1; }
+    }
+    @media (max-width: 600px) {
+      body { padding-left: 14px; padding-right: 14px; }
+      .topbar, .section-header, .credential { align-items: stretch; flex-direction: column; }
+      .topbar { gap: 14px; }
+      .topbar > button, .section-header > button, .credential-actions, .credential-actions button { width: 100%; }
+      .profile-grid { grid-template-columns: 1fr; }
+      .profile-grid .field:last-child { grid-column: auto; }
+      .profile-actions { align-items: stretch; flex-direction: column; }
+      .profile-actions button { width: 100%; }
+      .setup-key { flex-direction: column; }
+      .dialog-actions { flex-direction: column-reverse; }
+      .dialog-actions button, .button-link { width: 100%; }
+    }
+    @media (max-width: 360px) {
+      .identity { align-items: flex-start; }
+      .brand { width: 40px; height: 40px; border-radius: 12px; }
+      .card { border-radius: 14px; }
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #0e1118; color: #f2f4f7; }
+      body { background: radial-gradient(circle at 20% 10%, rgba(74, 99, 227, .25), transparent 34%), #0e1118; }
+      .card { border-color: rgba(255,255,255,.1); background: rgba(21, 26, 36, .94); box-shadow: 0 18px 55px rgba(0,0,0,.3); }
+      .subtitle, .muted, label, .credential-meta { color: #98a2b3; }
+      input { border-color: #353d4c; background: #111722; color: #f2f4f7; }
+      input[readonly] { border-color: transparent; background: #111722; color: #d0d5dd; }
+      button.secondary, .button-link.secondary { border-color: #353d4c; color: #f2f4f7; }
+      button.danger { border-color: #7a3530; color: #f97066; }
+      .credential { border-color: #353d4c; }
+      .empty, .setup-key code { background: #111722; }
+      .security-note { color: #d0d5dd; background: rgba(86, 116, 244, .15); }
+      dialog { background: #151a24; }
+    }
+  </style>
+</head>
+<body>
+  <main id="account"
+        data-login-path="{{.LoginPath}}"
+        data-user-info-path="{{.UserInfoPath}}"
+        data-profile-path="{{.ProfilePath}}"
+        data-logout-path="{{.LogoutPath}}"
+        data-otp-credentials-path="{{.OTPCredentialsPath}}"
+        data-otp-enrollment-begin-path="{{.OTPEnrollmentBeginPath}}"
+        data-otp-enrollment-finish-path="{{.OTPEnrollmentFinishPath}}"
+        data-passkey-credentials-path="{{.PasskeyCredentialsPath}}"
+        data-passkey-register-begin-path="{{.PasskeyRegisterBeginPath}}"
+        data-passkey-register-finish-path="{{.PasskeyRegisterFinishPath}}">
+    <header class="topbar">
+      <div class="identity">
+        <div class="brand" aria-hidden="true">A</div>
+        <div>
+          <h1>个人中心</h1>
+          <p class="subtitle">管理账号资料与登录安全。</p>
+        </div>
+      </div>
+      <button id="logout" class="secondary" type="button">退出登录</button>
+    </header>
+
+    <div class="layout">
+      <section class="card" aria-labelledby="profile-title">
+        <div class="section-header">
+          <div>
+            <h2 id="profile-title">账号资料</h2>
+            <p class="subtitle">手机号用于 OTP 登录，邮箱会作为 OIDC 账号资料提供给已授权应用。</p>
+          </div>
+          <button id="edit-profile" class="secondary" type="button">编辑资料</button>
+        </div>
+        <form id="profile-form">
+          <div class="profile-grid">
+            <div class="field">
+              <label for="phone">手机号</label>
+              <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" required readonly>
+            </div>
+            <div class="field">
+              <label for="email">邮箱</label>
+              <input id="email" name="email" type="email" inputmode="email" autocomplete="email" required readonly>
+            </div>
+            <div class="field">
+              <label for="nickname">昵称</label>
+              <input id="nickname" name="nickname" type="text" autocomplete="nickname" maxlength="50" required readonly>
+            </div>
+          </div>
+          <p id="profile-message" class="message" role="status" aria-live="polite"></p>
+          <div id="profile-actions" class="profile-actions" hidden>
+            <button id="cancel-profile" class="secondary" type="button">取消</button>
+            <button id="save-profile" type="submit">保存资料</button>
+          </div>
+        </form>
+      </section>
+
+      <p class="security-note">为避免账号无法登录，OTP 和通行密钥必须至少保留一个。两种方式都支持绑定多个。</p>
+
+      <div class="security-grid">
+        <section class="card" aria-labelledby="otp-title">
+          <div class="section-header">
+            <div>
+              <h2 id="otp-title">OTP 验证器</h2>
+              <p class="subtitle">可绑定多个验证器应用或设备。</p>
+            </div>
+            <button id="add-otp" type="button">绑定 OTP</button>
+          </div>
+          <div id="otp-list" class="credential-list" aria-live="polite"></div>
+          <p id="otp-empty" class="empty muted" hidden>尚未绑定 OTP。</p>
+          <p id="otp-message" class="message" role="status" aria-live="polite"></p>
+        </section>
+
+        <section class="card" aria-labelledby="passkey-title">
+          <div class="section-header">
+            <div>
+              <h2 id="passkey-title">通行密钥</h2>
+              <p class="subtitle">使用指纹、面容或设备解锁登录。</p>
+            </div>
+            <button id="add-passkey" type="button">添加通行密钥</button>
+          </div>
+          <div id="passkey-list" class="credential-list" aria-live="polite"></div>
+          <p id="passkey-empty" class="empty muted" hidden>尚未绑定通行密钥。</p>
+          <p id="passkey-unsupported" class="empty muted" hidden>当前浏览器不支持通行密钥。</p>
+          <p id="passkey-message" class="message" role="status" aria-live="polite"></p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <dialog id="otp-dialog" aria-labelledby="otp-dialog-title">
+    <div class="dialog-body">
+      <h2 id="otp-dialog-title">绑定 OTP 验证器</h2>
+      <p class="muted">在验证器应用中打开下方链接，或手动输入设置密钥，然后输入当前的 6 位动态验证码。</p>
+      <div class="setup-key">
+        <code id="otp-secret"></code>
+        <button id="copy-otp-secret" class="secondary" type="button">复制</button>
+      </div>
+      <a id="open-otp-app" class="button-link secondary" href="#">在验证器应用中打开</a>
+      <label for="otp-code">动态验证码</label>
+      <input id="otp-code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6">
+      <p id="otp-dialog-message" class="message" role="alert" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="cancel-otp" class="secondary" type="button">取消</button>
+        <button id="finish-otp" type="button">确认绑定</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="action-dialog" aria-labelledby="action-dialog-title">
+    <div class="dialog-body">
+      <h2 id="action-dialog-title"></h2>
+      <p id="action-dialog-description" class="muted"></p>
+      <div id="action-dialog-field" hidden>
+        <label id="action-dialog-label" for="action-dialog-input"></label>
+        <input id="action-dialog-input" type="text" maxlength="50">
+      </div>
+      <p id="action-dialog-message" class="message" role="alert" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button id="action-dialog-cancel" class="secondary" type="button">取消</button>
+        <button id="action-dialog-confirm" type="button">确认</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script>
+    const container = document.getElementById('account');
+    const profileForm = document.getElementById('profile-form');
+    const editProfileButton = document.getElementById('edit-profile');
+    const cancelProfileButton = document.getElementById('cancel-profile');
+    const profileActions = document.getElementById('profile-actions');
+    const saveProfileButton = document.getElementById('save-profile');
+    const profileMessage = document.getElementById('profile-message');
+    const otpList = document.getElementById('otp-list');
+    const otpEmpty = document.getElementById('otp-empty');
+    const otpMessage = document.getElementById('otp-message');
+    const passkeyList = document.getElementById('passkey-list');
+    const passkeyEmpty = document.getElementById('passkey-empty');
+    const passkeyMessage = document.getElementById('passkey-message');
+    const addPasskeyButton = document.getElementById('add-passkey');
+    const otpDialog = document.getElementById('otp-dialog');
+    const actionDialog = document.getElementById('action-dialog');
+    const actionDialogInput = document.getElementById('action-dialog-input');
+    const actionDialogField = document.getElementById('action-dialog-field');
+    const actionDialogConfirm = document.getElementById('action-dialog-confirm');
+    const passkeySupported = typeof window.PublicKeyCredential !== 'undefined' && !!navigator.credentials;
+    let otpEnrollment = null;
+    let profileSnapshot = null;
+    let actionDialogResolve = null;
+    let passkeyCreationAttempt = null;
+
+    function setMessage(element, value, isError = false) {
+      element.textContent = value;
+      element.classList.toggle('error', isError);
+    }
+
+    async function requestJSON(path, options = {}) {
+      const response = await fetch(path, {
+        credentials: 'same-origin',
+        ...options,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.code !== 0) throw new Error(payload.message || '操作失败，请重试');
+      return payload.data;
+    }
+
+    function displayValue(value) {
+      return value === null || value === undefined ? '' : String(value);
+    }
+
+    function formatTime(value, emptyText = '尚未使用') {
+      if (!value) return emptyText;
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN');
+    }
+
+    function setProfileEditing(editing) {
+      for (const input of profileForm.querySelectorAll('input')) input.readOnly = !editing;
+      editProfileButton.hidden = editing;
+      profileActions.hidden = !editing;
+      if (editing) profileForm.elements.phone.focus();
+    }
+
+    function applyProfile(user) {
+      profileSnapshot = {
+        phone: displayValue(user.phone),
+        email: displayValue(user.email),
+        nickname: displayValue(user.nickname)
+      };
+      profileForm.elements.phone.value = profileSnapshot.phone;
+      profileForm.elements.email.value = profileSnapshot.email;
+      profileForm.elements.nickname.value = profileSnapshot.nickname;
+    }
+
+    function restoreProfile() {
+      if (!profileSnapshot) return;
+      profileForm.elements.phone.value = profileSnapshot.phone;
+      profileForm.elements.email.value = profileSnapshot.email;
+      profileForm.elements.nickname.value = profileSnapshot.nickname;
+    }
+
+    function closeActionDialog(result) {
+      actionDialog.close();
+      const resolve = actionDialogResolve;
+      actionDialogResolve = null;
+      if (resolve) resolve(result);
+    }
+
+    function openActionDialog({ title, description, confirmText = '确认', danger = false, inputLabel = '', inputValue = '' }) {
+      if (actionDialog.open) closeActionDialog({ confirmed: false, value: '' });
+      document.getElementById('action-dialog-title').textContent = title;
+      document.getElementById('action-dialog-description').textContent = description;
+      document.getElementById('action-dialog-label').textContent = inputLabel;
+      actionDialogField.hidden = !inputLabel;
+      actionDialogInput.value = inputValue;
+      actionDialogConfirm.textContent = confirmText;
+      actionDialogConfirm.classList.toggle('danger', danger);
+      setMessage(document.getElementById('action-dialog-message'), '');
+      actionDialog.showModal();
+      if (inputLabel) actionDialogInput.focus(); else actionDialogConfirm.focus();
+      return new Promise(resolve => { actionDialogResolve = resolve; });
+    }
+
+    document.getElementById('action-dialog-cancel').addEventListener('click', () => {
+      closeActionDialog({ confirmed: false, value: '' });
+    });
+
+    actionDialogConfirm.addEventListener('click', () => {
+      const value = actionDialogInput.value.trim();
+      if (!actionDialogField.hidden && !value) {
+        setMessage(document.getElementById('action-dialog-message'), '请填写名称', true);
+        return;
+      }
+      closeActionDialog({ confirmed: true, value });
+    });
+
+    actionDialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      closeActionDialog({ confirmed: false, value: '' });
+    });
+
+    async function loadProfile() {
+      const user = await requestJSON(container.dataset.userInfoPath, { method: 'GET' });
+      applyProfile(user);
+    }
+
+    editProfileButton.addEventListener('click', () => {
+      setMessage(profileMessage, '');
+      setProfileEditing(true);
+    });
+
+    cancelProfileButton.addEventListener('click', () => {
+      restoreProfile();
+      setMessage(profileMessage, '');
+      setProfileEditing(false);
+    });
+
+    profileForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (profileActions.hidden) return;
+      saveProfileButton.disabled = true;
+      setMessage(profileMessage, '正在保存…');
+      try {
+        const user = await requestJSON(container.dataset.profilePath, {
+          method: 'PUT',
+          body: JSON.stringify({
+            phone: profileForm.elements.phone.value.trim(),
+            email: profileForm.elements.email.value.trim(),
+            nickname: profileForm.elements.nickname.value.trim()
+          })
+        });
+        applyProfile(user);
+        setMessage(profileMessage, '资料已保存');
+        setProfileEditing(false);
+      } catch (error) {
+        setMessage(profileMessage, error instanceof Error ? error.message : '保存失败', true);
+      } finally {
+        saveProfileButton.disabled = false;
+      }
+    });
+
+    document.getElementById('logout').addEventListener('click', async event => {
+      const button = event.currentTarget;
+      const decision = await openActionDialog({
+        title: '退出登录',
+        description: '确定退出当前 Auth 会话吗？',
+        confirmText: '退出登录',
+        danger: true
+      });
+      if (!decision.confirmed) return;
+      button.disabled = true;
+      try {
+        await requestJSON(container.dataset.logoutPath, { method: 'POST', body: '{}' });
+        window.location.replace(`${container.dataset.loginPath}?return_to=${encodeURIComponent(window.location.pathname)}`);
+      } catch (error) {
+        button.disabled = false;
+        setMessage(profileMessage, error instanceof Error ? error.message : '退出失败', true);
+      }
+    });
+
+    function credentialElement(titleText, metaText, onDelete, onRename = null) {
+      const item = document.createElement('article');
+      item.className = 'credential';
+      const details = document.createElement('div');
+      const title = document.createElement('p');
+      title.className = 'credential-title';
+      title.textContent = titleText;
+      const meta = document.createElement('p');
+      meta.className = 'credential-meta';
+      meta.textContent = metaText;
+      details.append(title, meta);
+      const actions = document.createElement('div');
+      actions.className = 'credential-actions';
+      if (onRename) {
+        const rename = document.createElement('button');
+        rename.type = 'button';
+        rename.className = 'secondary';
+        rename.textContent = '重命名';
+        rename.addEventListener('click', onRename);
+        actions.append(rename);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'danger';
+      remove.textContent = '解绑';
+      remove.addEventListener('click', onDelete);
+      actions.append(remove);
+      item.append(details, actions);
+      return item;
+    }
+
+    async function loadOTPs() {
+      const credentials = await requestJSON(container.dataset.otpCredentialsPath, { method: 'GET' });
+      otpList.replaceChildren();
+      otpEmpty.hidden = credentials.length !== 0;
+      credentials.forEach(credential => {
+        otpList.append(credentialElement(
+          credential.name,
+          `绑定于 ${formatTime(credential.created, '未知')} · 最近使用 ${formatTime(credential.last_used_at)}`,
+          () => void deleteOTP(credential)
+        ));
+      });
+    }
+
+    async function deleteOTP(credential) {
+      const decision = await openActionDialog({
+        title: '解绑 OTP',
+        description: `确定解绑“${credential.name}”吗？解绑后该验证器不能再用于登录。`,
+        confirmText: '确认解绑',
+        danger: true
+      });
+      if (!decision.confirmed) return;
+      try {
+        await requestJSON(`${container.dataset.otpCredentialsPath}/${credential.id}`, { method: 'DELETE' });
+        setMessage(otpMessage, 'OTP 已解绑');
+        await loadOTPs();
+      } catch (error) {
+        setMessage(otpMessage, error instanceof Error ? error.message : '解绑失败', true);
+      }
+    }
+
+    document.getElementById('add-otp').addEventListener('click', async () => {
+      const decision = await openActionDialog({
+        title: '绑定 OTP',
+        description: '先给这个验证器或设备起一个便于识别的名称。',
+        confirmText: '下一步',
+        inputLabel: '验证器名称',
+        inputValue: '我的验证器'
+      });
+      if (!decision.confirmed) return;
+      setMessage(otpMessage, '正在生成设置密钥…');
+      try {
+        otpEnrollment = await requestJSON(container.dataset.otpEnrollmentBeginPath, {
+          method: 'POST', body: JSON.stringify({ name: decision.value })
+        });
+        document.getElementById('otp-secret').textContent = otpEnrollment.secret;
+        document.getElementById('open-otp-app').href = otpEnrollment.otpauth_url;
+        document.getElementById('otp-code').value = '';
+        setMessage(document.getElementById('otp-dialog-message'), '');
+        setMessage(otpMessage, '');
+        otpDialog.showModal();
+        document.getElementById('otp-code').focus();
+      } catch (error) {
+        setMessage(otpMessage, error instanceof Error ? error.message : '生成设置密钥失败', true);
+      }
+    });
+
+    document.getElementById('copy-otp-secret').addEventListener('click', async () => {
+      if (!otpEnrollment) return;
+      try {
+        await navigator.clipboard.writeText(otpEnrollment.secret);
+        setMessage(document.getElementById('otp-dialog-message'), '设置密钥已复制');
+      } catch {
+        setMessage(document.getElementById('otp-dialog-message'), '复制失败，请手动复制', true);
+      }
+    });
+
+    document.getElementById('cancel-otp').addEventListener('click', () => {
+      otpEnrollment = null;
+      otpDialog.close();
+    });
+
+    otpDialog.addEventListener('cancel', event => {
+      event.preventDefault();
+      otpEnrollment = null;
+      otpDialog.close();
+    });
+
+    document.getElementById('finish-otp').addEventListener('click', async event => {
+      if (!otpEnrollment) return;
+      const button = event.currentTarget;
+      const code = document.getElementById('otp-code').value.trim();
+      if (!/^\d{6}$/.test(code)) {
+        setMessage(document.getElementById('otp-dialog-message'), '请输入 6 位动态验证码', true);
+        return;
+      }
+      button.disabled = true;
+      try {
+        await requestJSON(container.dataset.otpEnrollmentFinishPath, {
+          method: 'POST', body: JSON.stringify({ flow_token: otpEnrollment.flow_token, code })
+        });
+        otpEnrollment = null;
+        otpDialog.close();
+        setMessage(otpMessage, 'OTP 绑定成功');
+        await loadOTPs();
+      } catch (error) {
+        setMessage(document.getElementById('otp-dialog-message'), error instanceof Error ? error.message : '绑定失败', true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    function decodeBase64URL(value) {
+      const base64 = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+      return Uint8Array.from(atob(base64), character => character.charCodeAt(0)).buffer;
+    }
+
+    function encodeBase64URL(value) {
+      const bytes = new Uint8Array(value);
+      let binary = '';
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function decodeCredentialOptions(options) {
+      const publicKey = structuredClone(options.publicKey || options);
+      publicKey.challenge = decodeBase64URL(publicKey.challenge);
+      if (publicKey.user?.id) publicKey.user.id = decodeBase64URL(publicKey.user.id);
+      for (const key of ['allowCredentials', 'excludeCredentials']) {
+        if (Array.isArray(publicKey[key])) publicKey[key] = publicKey[key].map(item => ({ ...item, id: decodeBase64URL(item.id) }));
+      }
+      return publicKey;
+    }
+
+    function encodeCredential(credential) {
+      const response = {
+        clientDataJSON: encodeBase64URL(credential.response.clientDataJSON),
+        attestationObject: encodeBase64URL(credential.response.attestationObject)
+      };
+      if (typeof credential.response.getTransports === 'function') response.transports = credential.response.getTransports();
+      return {
+        id: credential.id,
+        rawId: encodeBase64URL(credential.rawId),
+        type: credential.type,
+        response,
+        clientExtensionResults: credential.getClientExtensionResults()
+      };
+    }
+
+    function transportLabel(transports) {
+      if (!Array.isArray(transports) || transports.length === 0) return '通行密钥';
+      const labels = { internal: '本机', hybrid: '跨设备', usb: 'USB', nfc: 'NFC', ble: '蓝牙' };
+      return transports.map(item => labels[item] || item).join('、');
+    }
+
+    function browserLabel(userAgent) {
+      if (/Edg\//.test(userAgent)) return 'Edge';
+      if (/Firefox\//.test(userAgent)) return 'Firefox';
+      if (/Chrome\//.test(userAgent)) return 'Chrome';
+      if (/Safari\//.test(userAgent)) return 'Safari';
+      return '';
+    }
+
+    function platformLabel(platform) {
+      const labels = {
+        MacIntel: 'macOS',
+        Win32: 'Windows',
+        iPhone: 'iPhone',
+        iPad: 'iPad'
+      };
+      return labels[platform] || platform;
+    }
+
+    function deviceInfoLabel(info = {}) {
+      const parts = [];
+      const device = info.model || platformLabel(info.platform || '');
+      if (device) parts.push(device);
+      const browser = browserLabel(info.user_agent || '');
+      if (browser) parts.push(browser);
+      if (info.mobile && !device) parts.push('移动设备');
+      return parts.join(' · ') || '设备信息未知';
+    }
+
+    function suggestedPasskeyName(credential) {
+      const label = deviceInfoLabel(credential.device_info);
+      const value = label === '设备信息未知' ? '我的通行密钥' : label;
+      return Array.from(value).slice(0, 50).join('');
+    }
+
+    async function collectDeviceInfo() {
+      const userAgentData = navigator.userAgentData;
+      const info = {
+        user_agent: navigator.userAgent || '',
+        platform: userAgentData?.platform || navigator.platform || '',
+        platform_version: '',
+        model: '',
+        mobile: userAgentData?.mobile ?? /Mobi|Android/i.test(navigator.userAgent || '')
+      };
+      if (typeof userAgentData?.getHighEntropyValues === 'function') {
+        try {
+          const details = await userAgentData.getHighEntropyValues(['model', 'platformVersion']);
+          info.model = details.model || '';
+          info.platform_version = details.platformVersion || '';
+        } catch {
+          // Basic browser-provided device information is still available.
+        }
+      }
+      return info;
+    }
+
+    async function renamePasskey(credential, afterCreation = false) {
+      const device = deviceInfoLabel(credential.device_info);
+      const decision = await openActionDialog({
+        title: afterCreation ? '为通行密钥命名' : '重命名通行密钥',
+        description: afterCreation
+          ? `通行密钥已绑定，识别到的设备：${device}。`
+          : `识别到的设备：${device}。`,
+        confirmText: '保存名称',
+        inputLabel: '通行密钥名称',
+        inputValue: credential.name || suggestedPasskeyName(credential)
+      });
+      if (!decision.confirmed) {
+        if (afterCreation) setMessage(passkeyMessage, '通行密钥已添加，可稍后重命名');
+        return false;
+      }
+      try {
+        await requestJSON(`${container.dataset.passkeyCredentialsPath}/${credential.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: decision.value })
+        });
+        setMessage(passkeyMessage, afterCreation ? '通行密钥已添加并命名' : '通行密钥名称已更新');
+        await loadPasskeys();
+        return true;
+      } catch (error) {
+        setMessage(passkeyMessage, error instanceof Error ? error.message : '重命名失败', true);
+        return false;
+      }
+    }
+
+    async function loadPasskeys() {
+      const credentials = await requestJSON(container.dataset.passkeyCredentialsPath, { method: 'GET' });
+      passkeyList.replaceChildren();
+      passkeyEmpty.hidden = credentials.length !== 0;
+      credentials.forEach((credential, index) => {
+        passkeyList.append(credentialElement(
+          credential.name || `通行密钥 ${index + 1}`,
+          `${deviceInfoLabel(credential.device_info)} · ${transportLabel(credential.transports)} · 添加于 ${formatTime(credential.created, '未知')} · 最近使用 ${formatTime(credential.last_used_at)}${credential.backup_state ? ' · 已同步' : ''}`,
+          () => void deletePasskey(credential),
+          () => void renamePasskey(credential)
+        ));
+      });
+    }
+
+    async function deletePasskey(credential) {
+      const decision = await openActionDialog({
+        title: '解绑通行密钥',
+        description: '确定解绑这个通行密钥吗？解绑后该设备不能再使用它登录。',
+        confirmText: '确认解绑',
+        danger: true
+      });
+      if (!decision.confirmed) return;
+      try {
+        await requestJSON(`${container.dataset.passkeyCredentialsPath}/${credential.id}`, { method: 'DELETE' });
+        setMessage(passkeyMessage, '通行密钥已解绑');
+        await loadPasskeys();
+      } catch (error) {
+        setMessage(passkeyMessage, error instanceof Error ? error.message : '解绑失败', true);
+      }
+    }
+
+    function resetPasskeyCreationButton() {
+      addPasskeyButton.disabled = false;
+      addPasskeyButton.textContent = '添加通行密钥';
+      addPasskeyButton.classList.remove('secondary');
+    }
+
+    function cancelPasskeyCreation(message = '已取消创建通行密钥', isError = false) {
+      const attempt = passkeyCreationAttempt;
+      if (!attempt) return;
+      passkeyCreationAttempt = null;
+      attempt.cancelled = true;
+      if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+      if (attempt.controller) attempt.controller.abort();
+      resetPasskeyCreationButton();
+      setMessage(passkeyMessage, message, isError);
+    }
+
+    addPasskeyButton.addEventListener('click', async () => {
+      if (passkeyCreationAttempt) {
+        cancelPasskeyCreation();
+        return;
+      }
+
+      const attempt = { controller: null, timeoutID: null, cancelled: false };
+      passkeyCreationAttempt = attempt;
+      addPasskeyButton.disabled = true;
+      addPasskeyButton.textContent = '正在准备…';
+      setMessage(passkeyMessage, '正在准备通行密钥创建请求…');
+      try {
+        const deviceInfo = await collectDeviceInfo();
+        const begin = await requestJSON(container.dataset.passkeyRegisterBeginPath, { method: 'POST', body: '{}' });
+        if (attempt.cancelled || passkeyCreationAttempt !== attempt) return;
+
+        attempt.controller = new AbortController();
+        attempt.timeoutID = window.setTimeout(() => {
+          if (passkeyCreationAttempt === attempt) {
+            cancelPasskeyCreation('创建通行密钥已超时，请重试', true);
+          }
+        }, 120000);
+        addPasskeyButton.disabled = false;
+        addPasskeyButton.textContent = '取消创建';
+        addPasskeyButton.classList.add('secondary');
+        setMessage(
+          passkeyMessage,
+          '请在弹出的验证器中完成创建；关闭弹窗后可点击“取消创建”。'
+        );
+        const credential = await navigator.credentials.create({
+          publicKey: decodeCredentialOptions(begin.options),
+          signal: attempt.controller.signal
+        });
+        if (attempt.cancelled || passkeyCreationAttempt !== attempt) return;
+        if (!credential) throw new Error('未创建通行密钥');
+
+        if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+        attempt.timeoutID = null;
+        addPasskeyButton.disabled = true;
+        addPasskeyButton.textContent = '正在保存…';
+        addPasskeyButton.classList.remove('secondary');
+        const createdCredential = await requestJSON(container.dataset.passkeyRegisterFinishPath, {
+          method: 'POST',
+          body: JSON.stringify({
+            flow_token: begin.flow_token,
+            credential: encodeCredential(credential),
+            device_info: deviceInfo
+          })
+        });
+        if (attempt.cancelled || passkeyCreationAttempt !== attempt) return;
+        setMessage(passkeyMessage, '通行密钥添加成功');
+        await loadPasskeys();
+        await renamePasskey(createdCredential, true);
+      } catch (error) {
+        if (!attempt.cancelled) {
+          const aborted = error instanceof DOMException && error.name === 'AbortError';
+          setMessage(
+            passkeyMessage,
+            aborted
+              ? '已取消创建通行密钥'
+              : error instanceof Error
+                ? error.message
+                : '创建通行密钥失败',
+            !aborted
+          );
+        }
+      } finally {
+        if (passkeyCreationAttempt === attempt) {
+          if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
+          passkeyCreationAttempt = null;
+          resetPasskeyCreationButton();
+        }
+      }
+    });
+
+    if (!passkeySupported) {
+      addPasskeyButton.hidden = true;
+      document.getElementById('passkey-unsupported').hidden = false;
+    }
+
+    Promise.all([loadProfile(), loadOTPs(), loadPasskeys()]).catch(error => {
+      const text = error instanceof Error ? error.message : '个人中心加载失败';
+      setMessage(profileMessage, text, true);
+    });
+  </script>
+</body>
+</html>
