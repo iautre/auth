@@ -1,10 +1,10 @@
-// Package authhttp exposes auth's complete HTTP surface as a reusable Gin module.
-// The standalone auth binary and applications embedding auth in their own HTTP server
-// both call Mount, so route registration cannot drift between the two modes.
+// Package authhttp exposes Auth's application API and OAuth/OIDC protocol
+// surface as separate reusable Gin modules.
 package authhttp
 
 import (
 	"context"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -15,12 +15,22 @@ import (
 	"github.com/iautre/gowk"
 )
 
-// Options controls where the auth HTTP module is exposed.
-type Options struct {
+// APIOptions controls where Auth's application-facing HTTP API is exposed.
+type APIOptions struct {
 	// Prefix is prepended to auth REST endpoints. Empty exposes them at the root.
 	Prefix string
 	// MCPPath mounts the auth MCP endpoint on the same engine. Empty disables MCP.
 	MCPPath string
+}
+
+// Options is kept as a source-compatible alias for callers migrating from Mount.
+type Options = APIOptions
+
+// OAuthOptions controls the optional OAuth2/OIDC authorization-server surface.
+type OAuthOptions struct {
+	// LoginURL is the browser login page owned by the mounting application.
+	// Empty makes anonymous authorization requests return 401 instead of redirecting.
+	LoginURL string
 }
 
 // Module contains the mounted route group and middleware that host applications can
@@ -31,27 +41,25 @@ type Module struct {
 	CheckAdmin gin.HandlerFunc
 }
 
-// Mount injects all auth HTTP routes into router.
+// MountAPI injects Auth's application-facing HTTP API into router.
 // Auth migrations are registered automatically; database/Redis connections and process lifecycle
 // remain the host application's responsibility.
-func Mount(router *gin.Engine, options Options) *Module {
+func MountAPI(router *gin.Engine, options APIOptions) *Module {
 	migrations.Register()
 
 	group := router.Group(normalizePath(options.Prefix))
 	ctx := context.Background()
 
 	userHandler := handler.NewUserHandler(ctx)
-	group.GET("/login", handler.OIDCLoginPage)
 	group.POST("/login", userHandler.Login)
-	group.GET("/account", handler.OAuth2BrowserLogin(group.BasePath()), handler.AccountPage)
 
 	mqttHandler := handler.NewMqttHandler(ctx)
 	group.POST("/mqtt/auth", mqttHandler.Auth)
 
-	route.Router(group)
+	route.API(group)
 
 	if options.MCPPath != "" {
-		gowk.SetupMCP(router, normalizePath(options.MCPPath), mcpserver.NewProvider(group.BasePath()), gowk.CheckLogin)
+		gowk.SetupMCP(router, normalizePath(options.MCPPath), mcpserver.NewProvider(), gowk.CheckLogin)
 	}
 
 	return &Module{
@@ -59,6 +67,41 @@ func Mount(router *gin.Engine, options Options) *Module {
 		CheckLogin: gowk.CheckLogin,
 		CheckAdmin: handler.AdminMiddleware,
 	}
+}
+
+// Mount is the compatibility name for MountAPI. New callers should use
+// MountAPI so it is explicit that OAuth/OIDC protocol routes are not included.
+func Mount(router *gin.Engine, options Options) *Module {
+	return MountAPI(router, options)
+}
+
+// MountOAuth explicitly enables the OAuth2/OIDC authorization-server surface.
+// It is intentionally separate from MountAPI so ordinary host applications do
+// not expose protocol endpoints below their business API prefix.
+func MountOAuth(router *gin.Engine, options OAuthOptions) *Module {
+	migrations.Register()
+	// OAuth/OIDC protocol endpoints have fixed conventional root paths. They are
+	// deliberately not mountable below an application API prefix: doing so would
+	// produce surprising paths and make issuer/discovery semantics ambiguous.
+	group := router.Group("")
+	route.OAuth(group, validateLoginURL(options.LoginURL))
+	return &Module{
+		Group:      group,
+		CheckLogin: gowk.CheckLogin,
+		CheckAdmin: handler.AdminMiddleware,
+	}
+}
+
+func validateLoginURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || parsed.IsAbs() || parsed.Host != "" || parsed.Fragment != "" || parsed.RawQuery != "" {
+		panic("authhttp: LoginURL must be a same-origin relative path without query or fragment")
+	}
+	return raw
 }
 
 func normalizePath(path string) string {

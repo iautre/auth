@@ -19,6 +19,8 @@ service AuthService {
   // Login 验证账号密码/OTP，签发 gowk token 并存入 auth Redis。
   // 调用方凭此 token 再通过 CheckToken 完成后续鉴权，无需直连 Redis。
   rpc Login(LoginRequest) returns (LoginResponse);
+  // Logout 撤销 auth Redis 中的 native token。
+  rpc Logout(LogoutRequest) returns (google.protobuf.Empty);
   // GetFullUserInfo 返回完整用户信息（用于 /user/info 接口）。
   rpc GetFullUserInfo(GetUserInfoRequest) returns (FullUserInfoResponse);
 }
@@ -109,6 +111,10 @@ message LoginResponse {
   int64 user_id = 2;
   string nickname = 3;
   string avatar = 4;
+}
+
+message LogoutRequest {
+  string token = 1;
 }
 
 message FullUserInfoResponse {

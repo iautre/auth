@@ -856,6 +856,50 @@ func (x *LoginResponse) GetAvatar() string {
 	return ""
 }
 
+type LogoutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogoutRequest) Reset() {
+	*x = LogoutRequest{}
+	mi := &file_pkg_proto_auth_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogoutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogoutRequest) ProtoMessage() {}
+
+func (x *LogoutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_proto_auth_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogoutRequest.ProtoReflect.Descriptor instead.
+func (*LogoutRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_proto_auth_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *LogoutRequest) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
 type FullUserInfoResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -874,7 +918,7 @@ type FullUserInfoResponse struct {
 
 func (x *FullUserInfoResponse) Reset() {
 	*x = FullUserInfoResponse{}
-	mi := &file_pkg_proto_auth_proto_msgTypes[12]
+	mi := &file_pkg_proto_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +930,7 @@ func (x *FullUserInfoResponse) String() string {
 func (*FullUserInfoResponse) ProtoMessage() {}
 
 func (x *FullUserInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_proto_auth_proto_msgTypes[12]
+	mi := &file_pkg_proto_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +943,7 @@ func (x *FullUserInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FullUserInfoResponse.ProtoReflect.Descriptor instead.
 func (*FullUserInfoResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_proto_auth_proto_rawDescGZIP(), []int{12}
+	return file_pkg_proto_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FullUserInfoResponse) GetId() int64 {
@@ -990,7 +1034,7 @@ type OIDCDiscoveryResponse struct {
 
 func (x *OIDCDiscoveryResponse) Reset() {
 	*x = OIDCDiscoveryResponse{}
-	mi := &file_pkg_proto_auth_proto_msgTypes[13]
+	mi := &file_pkg_proto_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1002,7 +1046,7 @@ func (x *OIDCDiscoveryResponse) String() string {
 func (*OIDCDiscoveryResponse) ProtoMessage() {}
 
 func (x *OIDCDiscoveryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_proto_auth_proto_msgTypes[13]
+	mi := &file_pkg_proto_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1015,7 +1059,7 @@ func (x *OIDCDiscoveryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OIDCDiscoveryResponse.ProtoReflect.Descriptor instead.
 func (*OIDCDiscoveryResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_proto_auth_proto_rawDescGZIP(), []int{13}
+	return file_pkg_proto_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *OIDCDiscoveryResponse) GetIssuer() string {
@@ -1162,7 +1206,9 @@ const file_pkg_proto_auth_proto_rawDesc = "" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\x03R\x06userId\x12\x1a\n" +
 	"\bnickname\x18\x03 \x01(\tR\bnickname\x12\x16\n" +
-	"\x06avatar\x18\x04 \x01(\tR\x06avatar\"\x95\x02\n" +
+	"\x06avatar\x18\x04 \x01(\tR\x06avatar\"%\n" +
+	"\rLogoutRequest\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\"\x95\x02\n" +
 	"\x14FullUserInfoResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x14\n" +
 	"\x05phone\x18\x02 \x01(\tR\x05phone\x12\x14\n" +
@@ -1187,7 +1233,7 @@ const file_pkg_proto_auth_proto_rawDesc = "" +
 	"\x15grant_types_supported\x18\b \x03(\tR\x13grantTypesSupported\x126\n" +
 	"\x17subject_types_supported\x18\t \x03(\tR\x15subjectTypesSupported\x12O\n" +
 	"%id_token_signing_alg_values_supported\x18\n" +
-	" \x03(\tR idTokenSigningAlgValuesSupported2\x9a\x04\n" +
+	" \x03(\tR idTokenSigningAlgValuesSupported2\xd1\x04\n" +
 	"\vAuthService\x12B\n" +
 	"\vOAuth2Token\x12\x18.auth.OAuth2TokenRequest\x1a\x19.auth.OAuth2TokenResponse\x12E\n" +
 	"\fOIDCUserInfo\x12\x19.auth.OIDCUserInfoRequest\x1a\x1a.auth.OIDCUserInfoResponse\x12:\n" +
@@ -1196,7 +1242,8 @@ const file_pkg_proto_auth_proto_rawDesc = "" +
 	"\n" +
 	"CheckToken\x12\x17.auth.CheckTokenRequest\x1a\x18.auth.CheckTokenResponse\x12B\n" +
 	"\vGetUserInfo\x12\x18.auth.GetUserInfoRequest\x1a\x19.auth.GetUserInfoResponse\x120\n" +
-	"\x05Login\x12\x12.auth.LoginRequest\x1a\x13.auth.LoginResponse\x12G\n" +
+	"\x05Login\x12\x12.auth.LoginRequest\x1a\x13.auth.LoginResponse\x125\n" +
+	"\x06Logout\x12\x13.auth.LogoutRequest\x1a\x16.google.protobuf.Empty\x12G\n" +
 	"\x0fGetFullUserInfo\x12\x18.auth.GetUserInfoRequest\x1a\x1a.auth.FullUserInfoResponseB(Z&github.com/iautre/auth/pkg/proto;protob\x06proto3"
 
 var (
@@ -1211,7 +1258,7 @@ func file_pkg_proto_auth_proto_rawDescGZIP() []byte {
 	return file_pkg_proto_auth_proto_rawDescData
 }
 
-var file_pkg_proto_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_pkg_proto_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_pkg_proto_auth_proto_goTypes = []any{
 	(*OAuth2TokenRequest)(nil),    // 0: auth.OAuth2TokenRequest
 	(*OAuth2TokenResponse)(nil),   // 1: auth.OAuth2TokenResponse
@@ -1225,30 +1272,33 @@ var file_pkg_proto_auth_proto_goTypes = []any{
 	(*GetUserInfoResponse)(nil),   // 9: auth.GetUserInfoResponse
 	(*LoginRequest)(nil),          // 10: auth.LoginRequest
 	(*LoginResponse)(nil),         // 11: auth.LoginResponse
-	(*FullUserInfoResponse)(nil),  // 12: auth.FullUserInfoResponse
-	(*OIDCDiscoveryResponse)(nil), // 13: auth.OIDCDiscoveryResponse
-	(*emptypb.Empty)(nil),         // 14: google.protobuf.Empty
+	(*LogoutRequest)(nil),         // 12: auth.LogoutRequest
+	(*FullUserInfoResponse)(nil),  // 13: auth.FullUserInfoResponse
+	(*OIDCDiscoveryResponse)(nil), // 14: auth.OIDCDiscoveryResponse
+	(*emptypb.Empty)(nil),         // 15: google.protobuf.Empty
 }
 var file_pkg_proto_auth_proto_depIdxs = []int32{
 	5,  // 0: auth.OIDCJwksResponse.keys:type_name -> auth.OIDCJwk
 	0,  // 1: auth.AuthService.OAuth2Token:input_type -> auth.OAuth2TokenRequest
 	2,  // 2: auth.AuthService.OIDCUserInfo:input_type -> auth.OIDCUserInfoRequest
-	14, // 3: auth.AuthService.OIDCJwks:input_type -> google.protobuf.Empty
-	14, // 4: auth.AuthService.OIDCDiscovery:input_type -> google.protobuf.Empty
+	15, // 3: auth.AuthService.OIDCJwks:input_type -> google.protobuf.Empty
+	15, // 4: auth.AuthService.OIDCDiscovery:input_type -> google.protobuf.Empty
 	6,  // 5: auth.AuthService.CheckToken:input_type -> auth.CheckTokenRequest
 	8,  // 6: auth.AuthService.GetUserInfo:input_type -> auth.GetUserInfoRequest
 	10, // 7: auth.AuthService.Login:input_type -> auth.LoginRequest
-	8,  // 8: auth.AuthService.GetFullUserInfo:input_type -> auth.GetUserInfoRequest
-	1,  // 9: auth.AuthService.OAuth2Token:output_type -> auth.OAuth2TokenResponse
-	3,  // 10: auth.AuthService.OIDCUserInfo:output_type -> auth.OIDCUserInfoResponse
-	4,  // 11: auth.AuthService.OIDCJwks:output_type -> auth.OIDCJwksResponse
-	13, // 12: auth.AuthService.OIDCDiscovery:output_type -> auth.OIDCDiscoveryResponse
-	7,  // 13: auth.AuthService.CheckToken:output_type -> auth.CheckTokenResponse
-	9,  // 14: auth.AuthService.GetUserInfo:output_type -> auth.GetUserInfoResponse
-	11, // 15: auth.AuthService.Login:output_type -> auth.LoginResponse
-	12, // 16: auth.AuthService.GetFullUserInfo:output_type -> auth.FullUserInfoResponse
-	9,  // [9:17] is the sub-list for method output_type
-	1,  // [1:9] is the sub-list for method input_type
+	12, // 8: auth.AuthService.Logout:input_type -> auth.LogoutRequest
+	8,  // 9: auth.AuthService.GetFullUserInfo:input_type -> auth.GetUserInfoRequest
+	1,  // 10: auth.AuthService.OAuth2Token:output_type -> auth.OAuth2TokenResponse
+	3,  // 11: auth.AuthService.OIDCUserInfo:output_type -> auth.OIDCUserInfoResponse
+	4,  // 12: auth.AuthService.OIDCJwks:output_type -> auth.OIDCJwksResponse
+	14, // 13: auth.AuthService.OIDCDiscovery:output_type -> auth.OIDCDiscoveryResponse
+	7,  // 14: auth.AuthService.CheckToken:output_type -> auth.CheckTokenResponse
+	9,  // 15: auth.AuthService.GetUserInfo:output_type -> auth.GetUserInfoResponse
+	11, // 16: auth.AuthService.Login:output_type -> auth.LoginResponse
+	15, // 17: auth.AuthService.Logout:output_type -> google.protobuf.Empty
+	13, // 18: auth.AuthService.GetFullUserInfo:output_type -> auth.FullUserInfoResponse
+	10, // [10:19] is the sub-list for method output_type
+	1,  // [1:10] is the sub-list for method input_type
 	1,  // [1:1] is the sub-list for extension type_name
 	1,  // [1:1] is the sub-list for extension extendee
 	0,  // [0:1] is the sub-list for field type_name
@@ -1265,7 +1315,7 @@ func file_pkg_proto_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_proto_auth_proto_rawDesc), len(file_pkg_proto_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

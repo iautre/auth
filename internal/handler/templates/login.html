@@ -146,7 +146,6 @@
         data-passkey-login-begin-path="{{.PasskeyLoginBeginPath}}"
         data-passkey-login-finish-path="{{.PasskeyLoginFinishPath}}"
 		data-return-to="{{.ReturnTo}}"
-        data-token-storage-key="{{.TokenStorageKey}}"
         data-passkey-enabled="{{.PasskeyEnabled}}">
     <div class="brand" aria-hidden="true">A</div>
     <h1>登录 Auth</h1>
@@ -209,13 +208,6 @@
 
     function redirectToApplication() {
       window.location.replace(container.dataset.returnTo);
-    }
-
-    function persistLoginToken(loginResult) {
-      const storageKey = container.dataset.tokenStorageKey;
-      if (storageKey && loginResult?.token) {
-        localStorage.setItem(storageKey, loginResult.token);
-      }
     }
 
     function setLoginMessage(message, isError = true) {
@@ -474,7 +466,6 @@
             code: form.elements.code.value.trim()
           })
         });
-        persistLoginToken(loginResult);
         if (!passkeyEnabled) {
           redirectToApplication();
           return;

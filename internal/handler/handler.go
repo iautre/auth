@@ -166,18 +166,13 @@ func (u *UserHandler) ResetOTPCode(ctx *gin.Context) {
 type OAuth2Handler struct {
 	oauth2Service *service.OAuth2Service
 	oidcService   *service.OIDCService
-	apiPrefix     string
 }
 
-func NewOAuth2Handler(ctx context.Context, apiPrefix ...string) *OAuth2Handler {
-	handler := &OAuth2Handler{
+func NewOAuth2Handler(ctx context.Context) *OAuth2Handler {
+	return &OAuth2Handler{
 		oauth2Service: service.NewOAuth2Service(ctx),
 		oidcService:   service.DefaultOIDCService(),
 	}
-	if len(apiPrefix) > 0 {
-		handler.apiPrefix = apiPrefix[0]
-	}
-	return handler
 }
 
 func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
@@ -279,7 +274,7 @@ func (o *OAuth2Handler) OIDCDiscovery(ctx *gin.Context) {
 	// Discovery 只包含公开的 OIDC 元数据，允许浏览器端客户端跨域自动发现。
 	// Token / UserInfo 等携带凭据的端点不开放 CORS。
 	ctx.Header("Access-Control-Allow-Origin", "*")
-	discovery := o.oidcService.GetDiscoveryDocumentWithPrefix(o.apiPrefix)
+	discovery := o.oidcService.GetDiscoveryDocument()
 	ctx.JSON(http.StatusOK, discovery)
 	ctx.Abort()
 }
@@ -476,6 +471,24 @@ func (g *GrpcHandler) CheckToken(ctx context.Context, req *authpb.CheckTokenRequ
 		UserId: t.LoginId,
 		Device: t.Device,
 	}, nil
+}
+
+// Logout verifies and revokes a native token stored in Auth's Redis.
+func (g *GrpcHandler) Logout(ctx context.Context, req *authpb.LogoutRequest) (*emptypb.Empty, error) {
+	if req.Token == "" {
+		return nil, status.Error(codes.InvalidArgument, "token is required")
+	}
+	if _, err := g.CheckToken(ctx, &authpb.CheckTokenRequest{Token: req.Token}); err != nil {
+		return nil, err
+	}
+	rdb := gowk.Redis()
+	if rdb == nil {
+		return nil, status.Error(codes.Unavailable, "redis not ready")
+	}
+	if err := rdb.Del(ctx, redisTokenPrefix+req.Token).Err(); err != nil {
+		return nil, status.Errorf(codes.Internal, "revoke token: %v", err)
+	}
+	return &emptypb.Empty{}, nil
 }
 
 // nativeTokenTTL 与 gowk 默认 token 超时保持一致（30 天）。

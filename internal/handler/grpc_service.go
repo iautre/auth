@@ -55,6 +55,11 @@ func (s *AuthServiceServer) Login(ctx context.Context, req *proto.LoginRequest) 
 	return s.Handler.Login(ctx, req)
 }
 
+// Logout 撤销 native token
+func (s *AuthServiceServer) Logout(ctx context.Context, req *proto.LogoutRequest) (*emptypb.Empty, error) {
+	return s.Handler.Logout(ctx, req)
+}
+
 // GetFullUserInfo 返回完整用户信息
 func (s *AuthServiceServer) GetFullUserInfo(ctx context.Context, req *proto.GetUserInfoRequest) (*proto.FullUserInfoResponse, error) {
 	return s.Handler.GetFullUserInfo(ctx, req)

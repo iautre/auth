@@ -29,7 +29,6 @@ type loginPageData struct {
 	PasskeyLoginFinishPath    string
 	AccountPath               string
 	ReturnTo                  string
-	TokenStorageKey           string
 	PasskeyEnabled            bool
 	ShowAccountLink           bool
 }
@@ -47,35 +46,25 @@ type accountPageData struct {
 	PasskeyRegisterFinishPath string
 }
 
-// BrowserLoginPageOptions controls the browser login page when Auth is mounted
-// by another application. TokenStorageKey is intended for remote SDK hosts:
-// the token returned by their proxied login endpoint is stored under this key
-// before the browser is redirected back to that same host.
+// BrowserLoginPageOptions controls Auth's standalone browser login page.
 type BrowserLoginPageOptions struct {
-	DefaultReturnTo       string
-	AllowRelativeReturnTo bool
-	TokenStorageKey       string
-	EnablePasskey         bool
-	ShowAccountLink       bool
+	AuthorizationPaths []string
+	EnablePasskey      bool
+	ShowAccountLink    bool
 }
 
-// BrowserLoginPage renders Auth's reusable browser login page.
-//
-// Standalone Auth and authhttp.Mount keep the stricter OAuth/account-only
-// return target policy through OIDCLoginPage. Remote SDK hosts may opt into
-// same-origin relative targets so the token can be returned to their own SPA.
+// BrowserLoginPage renders Auth's standalone browser login page.
 func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		loginPath := ctx.Request.URL.Path
 		returnTo := ctx.Query("return_to")
 		accountPath := strings.TrimSuffix(loginPath, "/login") + "/account"
-		if returnTo == "" && options.DefaultReturnTo != "" {
-			returnTo = options.DefaultReturnTo
+		authorizationPaths := options.AuthorizationPaths
+		if len(authorizationPaths) == 0 {
+			authorizationPaths = []string{authorizationPath(loginPath)}
 		}
-		validReturnTo := validAuthorizationReturnTo(returnTo, authorizationPath(loginPath), accountPath)
-		if options.AllowRelativeReturnTo {
-			validReturnTo = validRelativeReturnTo(returnTo)
-		}
+		allowedReturnPaths := append(append([]string{}, authorizationPaths...), accountPath)
+		validReturnTo := validAuthorizationReturnTo(returnTo, allowedReturnPaths...)
 		if !validReturnTo {
 			ctx.String(http.StatusBadRequest, "invalid return_to")
 			return
@@ -93,7 +82,6 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 			PasskeyLoginFinishPath:    passkeyPath + "/login/finish",
 			AccountPath:               accountPath,
 			ReturnTo:                  returnTo,
-			TokenStorageKey:           options.TokenStorageKey,
 			PasskeyEnabled:            options.EnablePasskey,
 			ShowAccountLink:           options.ShowAccountLink,
 		}); err != nil {
@@ -103,10 +91,17 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 }
 
 func OIDCLoginPage(ctx *gin.Context) {
-	BrowserLoginPage(BrowserLoginPageOptions{
-		EnablePasskey:   true,
-		ShowAccountLink: true,
-	})(ctx)
+	OIDCLoginPageFor()(ctx)
+}
+
+// OIDCLoginPageFor builds Auth's standalone login page and allows it to return
+// only to the supplied authorization endpoints (plus the local account page).
+func OIDCLoginPageFor(authorizationPaths ...string) gin.HandlerFunc {
+	return BrowserLoginPage(BrowserLoginPageOptions{
+		AuthorizationPaths: authorizationPaths,
+		EnablePasskey:      true,
+		ShowAccountLink:    true,
+	})
 }
 
 func AccountPage(ctx *gin.Context) {
@@ -139,12 +134,8 @@ func setBrowserPageHeaders(ctx *gin.Context) {
 	ctx.Header("Content-Type", "text/html; charset=utf-8")
 }
 
-func OAuth2BrowserLogin(prefix string) gin.HandlerFunc {
-	loginPath := strings.TrimSuffix(prefix, "/") + "/login"
-	if loginPath == "" {
-		loginPath = "/login"
-	}
-
+func OAuth2BrowserLogin(loginURL string) gin.HandlerFunc {
+	loginURL = strings.TrimSpace(loginURL)
 	return func(ctx *gin.Context) {
 		probe := ctx.Copy()
 		probe.Writer = newProbeResponseWriter()
@@ -161,10 +152,16 @@ func OAuth2BrowserLogin(prefix string) gin.HandlerFunc {
 			ctx.Next()
 			return
 		}
+		if loginURL == "" {
+			// Continue into OAuth2Auth, which returns the standard unauthenticated
+			// response. The reusable package does not own browser navigation.
+			ctx.Next()
+			return
+		}
 
 		query := url.Values{}
 		query.Set("return_to", ctx.Request.URL.RequestURI())
-		ctx.Redirect(http.StatusFound, loginPath+"?"+query.Encode())
+		ctx.Redirect(http.StatusFound, loginURL+"?"+query.Encode())
 		ctx.Abort()
 	}
 }
@@ -187,14 +184,6 @@ func validAuthorizationReturnTo(raw string, expectedPaths ...string) bool {
 		}
 	}
 	return false
-}
-
-func validRelativeReturnTo(raw string) bool {
-	if raw == "" || !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || strings.ContainsAny(raw, "#\\") {
-		return false
-	}
-	parsed, err := url.ParseRequestURI(raw)
-	return err == nil && !parsed.IsAbs() && parsed.Host == "" && parsed.Fragment == ""
 }
 
 type probeResponseWriter struct {

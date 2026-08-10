@@ -5,9 +5,19 @@ import (
 	"io"
 	"testing"
 
+	authpb "github.com/iautre/auth/pkg/proto"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
+
+func TestGrpcLogoutRequiresToken(t *testing.T) {
+	_, err := NewGrpcHandler(context.Background()).Logout(context.Background(), &authpb.LogoutRequest{})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("status = %v, want InvalidArgument", status.Code(err))
+	}
+}
 
 func TestServiceTokenUnaryInterceptorAllowsWhenTokenUnset(t *testing.T) {
 	interceptor := ServiceTokenUnaryInterceptor("")

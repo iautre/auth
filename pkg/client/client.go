@@ -472,6 +472,15 @@ func (c *AuthClient) Login(ctx context.Context, account, code, device string) (*
 	return resp, nil
 }
 
+// Logout 撤销远程 Auth Service 中的 native token。
+func (c *AuthClient) Logout(ctx context.Context, token string) error {
+	_, err := c.authClient.Logout(ctx, &proto.LogoutRequest{Token: token})
+	if err != nil {
+		return grpcMsg(err)
+	}
+	return nil
+}
+
 // GetFullUserInfo 获取完整用户信息（用于 /user/info 接口）。
 func (c *AuthClient) GetFullUserInfo(ctx context.Context, userID int64) (*proto.FullUserInfoResponse, error) {
 	resp, err := c.authClient.GetFullUserInfo(ctx, &proto.GetUserInfoRequest{UserId: userID})

@@ -20,7 +20,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/iautre/auth/internal/config"
 	db2 "github.com/iautre/auth/internal/db"
 	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
@@ -597,36 +596,16 @@ var defaultOIDCService = &OIDCService{}
 func DefaultOIDCService() *OIDCService { return defaultOIDCService }
 
 func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
-	return o.GetDiscoveryDocumentWithPrefix(config.AuthAPIPrefix())
-}
-
-// GetDiscoveryDocumentWithPrefix 为指定 HTTP 挂载前缀生成发现文档。
-// 包内嵌模式由实际 RouterGroup.BasePath 传入，避免与进程环境变量产生两个配置来源。
-func (o *OIDCService) GetDiscoveryDocumentWithPrefix(prefix string) *dto.OIDCDiscoveryResponse {
 	baseURL := gowk.BaseURL()
-	prefix = strings.TrimSpace(prefix)
-	if prefix == "" || prefix == "/" {
-		prefix = ""
-	} else {
-		prefix = "/" + strings.Trim(prefix, "/")
-	}
-
-	// Build endpoints safely
-	buildEndpoint := func(path string) string {
-		if prefix != "" {
-			return baseURL + prefix + path
-		}
-		return baseURL + path
-	}
 
 	return &dto.OIDCDiscoveryResponse{
 		Issuer:                baseURL,
-		AuthorizationEndpoint: buildEndpoint("/oauth2/auth"),
-		TokenEndpoint:         buildEndpoint("/oidc/token"),
-		UserInfoEndpoint:      buildEndpoint("/oidc/userinfo"),
-		JwksUri:               buildEndpoint("/oidc/jwks"),
+		AuthorizationEndpoint: baseURL + "/oauth2/authorize",
+		TokenEndpoint:         baseURL + "/oauth2/token",
+		UserInfoEndpoint:      baseURL + "/oidc/userinfo",
+		JwksUri:               baseURL + "/oidc/jwks",
 		ScopesSupported:       []string{"openid", "profile", "email", "phone"},
-		// 当前 /oauth2/auth 只受理 response_type=code（授权码模式）。
+		// 当前 /oauth2/authorize 只受理 response_type=code（授权码模式）。
 		// 隐式 / 混合流并未在服务端实现；这里如实声明 ["code"]，避免客户端按 RFC 8414
 		// 自动协商出 id_token / token 路径再被 ValidateOAuth2AuthRequest 拒绝。
 		ResponseTypesSupported:           []string{"code"},

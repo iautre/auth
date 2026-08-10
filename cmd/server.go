@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"strings"
 
 	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/handler"
@@ -18,11 +19,18 @@ func Run() {
 
 	// Create servers
 	r := gowk.New()
-	// 独立 HTTP 模式与第三方包内嵌模式共用同一个 Mount，不再分别注册路由。
-	authhttp.Mount(r, authhttp.Options{
+	// 基础认证 API 可被第三方包复用；OAuth/OIDC 协议入口只在需要充当
+	// 授权服务器时显式挂载，避免进入宿主的 /api/.../auth 前缀。
+	module := authhttp.MountAPI(r, authhttp.APIOptions{
 		Prefix:  config.AuthAPIPrefix(),
 		MCPPath: "/mcp",
 	})
+	loginURL := strings.TrimSuffix(module.Group.BasePath(), "/") + "/login"
+	authhttp.MountOAuth(r, authhttp.OAuthOptions{LoginURL: loginURL})
+
+	// Auth 内置浏览器页面只属于独立部署模式。
+	module.Group.GET("/login", handler.OIDCLoginPageFor("/oauth2/authorize", "/oauth2/auth"))
+	module.Group.GET("/account", handler.OAuth2BrowserLogin(loginURL), handler.AccountPage)
 
 	// recovery 必须在链首：先兜住 handler panic，再做 service-token 鉴权，避免 panic 直接 crash 进程。
 	server := grpc.NewServer(

@@ -3,7 +3,6 @@ package handler
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 
@@ -16,12 +15,12 @@ func TestOAuth2BrowserLoginRedirectsAnonymousUser(t *testing.T) {
 	gowk.SetTokenHandler(&testTokenStore{})
 
 	router := gin.New()
-	router.GET("/oauth2/auth", OAuth2BrowserLogin(""), func(ctx *gin.Context) {
+	router.GET("/oauth2/authorize", OAuth2BrowserLogin("/login"), func(ctx *gin.Context) {
 		ctx.Status(http.StatusNoContent)
 	})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/oauth2/auth?client_id=newapi&state=test", nil)
+	request := httptest.NewRequest(http.MethodGet, "/oauth2/authorize?client_id=newapi&state=test", nil)
 	router.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusFound {
@@ -31,7 +30,7 @@ func TestOAuth2BrowserLoginRedirectsAnonymousUser(t *testing.T) {
 	if !strings.HasPrefix(location, "/login?return_to=") {
 		t.Fatalf("Location = %q", location)
 	}
-	if !strings.Contains(location, "%2Foauth2%2Fauth") {
+	if !strings.Contains(location, "%2Foauth2%2Fauthorize") {
 		t.Fatalf("Location does not preserve authorization request: %q", location)
 	}
 }
@@ -43,12 +42,12 @@ func TestOAuth2BrowserLoginAcceptsSessionCookie(t *testing.T) {
 	store.tokens.Store("session-token", &gowk.Token{Value: "session-token", LoginId: 42})
 
 	router := gin.New()
-	router.GET("/oauth2/auth", OAuth2BrowserLogin(""), func(ctx *gin.Context) {
+	router.GET("/oauth2/authorize", OAuth2BrowserLogin("/login"), func(ctx *gin.Context) {
 		ctx.String(http.StatusOK, "%d", gowk.LoginId(ctx))
 	})
 
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/oauth2/auth?client_id=newapi", nil)
+	request := httptest.NewRequest(http.MethodGet, "/oauth2/authorize?client_id=newapi", nil)
 	request.AddCookie(&http.Cookie{Name: "oidc_jwt", Value: "session-token"})
 	router.ServeHTTP(recorder, request)
 
@@ -60,10 +59,10 @@ func TestOAuth2BrowserLoginAcceptsSessionCookie(t *testing.T) {
 func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.GET("/api/auth/login", OIDCLoginPage)
+	router.GET("/api/auth/login", OIDCLoginPageFor("/oauth2/authorize", "/oauth2/auth"))
 
 	validRecorder := httptest.NewRecorder()
-	validRequest := httptest.NewRequest(http.MethodGet, "/api/auth/login?return_to=%2Fapi%2Fauth%2Foauth2%2Fauth%3Fclient_id%3Dnewapi", nil)
+	validRequest := httptest.NewRequest(http.MethodGet, "/api/auth/login?return_to=%2Foauth2%2Fauthorize%3Fclient_id%3Dnewapi", nil)
 	router.ServeHTTP(validRecorder, validRequest)
 	if validRecorder.Code != http.StatusOK {
 		t.Fatalf("valid status = %d, want 200", validRecorder.Code)
@@ -113,46 +112,13 @@ func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 	}
 }
 
-func TestBrowserLoginPageForRemoteSDKUsesRelativeReturnTargetAndTokenStorage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	router := gin.New()
-	router.GET("/api/console/auth/login", BrowserLoginPage(BrowserLoginPageOptions{
-		DefaultReturnTo:       "/",
-		AllowRelativeReturnTo: true,
-		TokenStorageKey:       "token",
-	}))
-
-	for _, target := range []string{"/", "/dashboard/workplace?tab=sms"} {
-		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, "/api/console/auth/login?return_to="+url.QueryEscape(target), nil)
-		router.ServeHTTP(recorder, request)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("target %q status = %d, want 200", target, recorder.Code)
-		}
-		for _, want := range []string{`data-token-storage-key="token"`, `data-passkey-enabled="false"`, "persistLoginToken(loginResult)"} {
-			if !strings.Contains(recorder.Body.String(), want) {
-				t.Fatalf("remote login page is missing %q", want)
-			}
-		}
-	}
-
-	for _, target := range []string{"https://evil.example/", "//evil.example/", "/\\evil.example/", "/dashboard#fragment"} {
-		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, "/api/console/auth/login?return_to="+url.QueryEscape(target), nil)
-		router.ServeHTTP(recorder, request)
-		if recorder.Code != http.StatusBadRequest {
-			t.Fatalf("target %q status = %d, want 400", target, recorder.Code)
-		}
-	}
-}
-
 func TestAccountPageRedirectsAnonymousAndRendersForSession(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store := &testTokenStore{}
 	gowk.SetTokenHandler(store)
 
 	router := gin.New()
-	router.GET("/api/auth/account", OAuth2BrowserLogin("/api/auth"), AccountPage)
+	router.GET("/api/auth/account", OAuth2BrowserLogin("/api/auth/login"), AccountPage)
 
 	anonymousRecorder := httptest.NewRecorder()
 	anonymousRequest := httptest.NewRequest(http.MethodGet, "/api/auth/account", nil)

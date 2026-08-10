@@ -27,6 +27,7 @@ const (
 	AuthService_CheckToken_FullMethodName      = "/auth.AuthService/CheckToken"
 	AuthService_GetUserInfo_FullMethodName     = "/auth.AuthService/GetUserInfo"
 	AuthService_Login_FullMethodName           = "/auth.AuthService/Login"
+	AuthService_Logout_FullMethodName          = "/auth.AuthService/Logout"
 	AuthService_GetFullUserInfo_FullMethodName = "/auth.AuthService/GetFullUserInfo"
 )
 
@@ -46,6 +47,8 @@ type AuthServiceClient interface {
 	// Login 验证账号密码/OTP，签发 gowk token 并存入 auth Redis。
 	// 调用方凭此 token 再通过 CheckToken 完成后续鉴权，无需直连 Redis。
 	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
+	// Logout 撤销 auth Redis 中的 native token。
+	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// GetFullUserInfo 返回完整用户信息（用于 /user/info 接口）。
 	GetFullUserInfo(ctx context.Context, in *GetUserInfoRequest, opts ...grpc.CallOption) (*FullUserInfoResponse, error)
 }
@@ -128,6 +131,16 @@ func (c *authServiceClient) Login(ctx context.Context, in *LoginRequest, opts ..
 	return out, nil
 }
 
+func (c *authServiceClient) Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, AuthService_Logout_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *authServiceClient) GetFullUserInfo(ctx context.Context, in *GetUserInfoRequest, opts ...grpc.CallOption) (*FullUserInfoResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FullUserInfoResponse)
@@ -154,6 +167,8 @@ type AuthServiceServer interface {
 	// Login 验证账号密码/OTP，签发 gowk token 并存入 auth Redis。
 	// 调用方凭此 token 再通过 CheckToken 完成后续鉴权，无需直连 Redis。
 	Login(context.Context, *LoginRequest) (*LoginResponse, error)
+	// Logout 撤销 auth Redis 中的 native token。
+	Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error)
 	// GetFullUserInfo 返回完整用户信息（用于 /user/info 接口）。
 	GetFullUserInfo(context.Context, *GetUserInfoRequest) (*FullUserInfoResponse, error)
 	mustEmbedUnimplementedAuthServiceServer()
@@ -186,6 +201,9 @@ func (UnimplementedAuthServiceServer) GetUserInfo(context.Context, *GetUserInfoR
 }
 func (UnimplementedAuthServiceServer) Login(context.Context, *LoginRequest) (*LoginResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Login not implemented")
+}
+func (UnimplementedAuthServiceServer) Logout(context.Context, *LogoutRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Logout not implemented")
 }
 func (UnimplementedAuthServiceServer) GetFullUserInfo(context.Context, *GetUserInfoRequest) (*FullUserInfoResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetFullUserInfo not implemented")
@@ -337,6 +355,24 @@ func _AuthService_Login_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuthService_Logout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LogoutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuthServiceServer).Logout(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AuthService_Logout_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuthServiceServer).Logout(ctx, req.(*LogoutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AuthService_GetFullUserInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetUserInfoRequest)
 	if err := dec(in); err != nil {
@@ -389,6 +425,10 @@ var AuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Login",
 			Handler:    _AuthService_Login_Handler,
+		},
+		{
+			MethodName: "Logout",
+			Handler:    _AuthService_Logout_Handler,
 		},
 		{
 			MethodName: "GetFullUserInfo",

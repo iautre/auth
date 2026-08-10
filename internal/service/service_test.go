@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func TestOIDCDiscoveryUsesExplicitHTTPPrefix(t *testing.T) {
-	discovery := DefaultOIDCService().GetDiscoveryDocumentWithPrefix("api/auth/")
-	want := gowk.BaseURL() + "/api/auth/oidc/token"
+func TestOIDCDiscoveryUsesRootProtocolPaths(t *testing.T) {
+	discovery := DefaultOIDCService().GetDiscoveryDocument()
+	want := gowk.BaseURL() + "/oauth2/token"
 	if discovery.TokenEndpoint != want {
 		t.Fatalf("TokenEndpoint = %q, want %q", discovery.TokenEndpoint, want)
 	}

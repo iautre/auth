@@ -1,34 +1,43 @@
 package embed
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 )
 
-func TestSetupMountsBrowserLoginPageForRemoteSDK(t *testing.T) {
+func TestSetupMountsBasicAPIWithoutBrowserOrOAuthRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("AUTH_GRPC_ADDR", "127.0.0.1:1")
 	router := gin.New()
 	Setup(router, "/api/host/auth")
 
-	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/host/auth/login?return_to=%2Fdashboard%2Fworkplace", nil)
-	router.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recorder.Code)
-	}
-	for _, want := range []string{
-		`data-login-path="/api/host/auth/login"`,
-		`data-token-storage-key="token"`,
-		`data-passkey-enabled="false"`,
-	} {
-		if !strings.Contains(recorder.Body.String(), want) {
-			t.Fatalf("browser login page is missing %q", want)
+	var loginAPI, logoutAPI, browserPage, oauthRoute bool
+	for _, registered := range router.Routes() {
+		if registered.Path == "/api/host/auth/login" && registered.Method == "POST" {
+			loginAPI = true
 		}
+		if registered.Path == "/api/host/auth/logout" && registered.Method == "POST" {
+			logoutAPI = true
+		}
+		if registered.Path == "/api/host/auth/login" && registered.Method == "GET" {
+			browserPage = true
+		}
+		if strings.Contains(registered.Path, "/oauth2/") || strings.Contains(registered.Path, "/oidc/") || strings.Contains(registered.Path, "/.well-known/") {
+			oauthRoute = true
+		}
+	}
+	if !loginAPI {
+		t.Fatal("POST login API was not mounted")
+	}
+	if browserPage {
+		t.Fatal("gRPC embed mode must not mount Auth's browser login page")
+	}
+	if !logoutAPI {
+		t.Fatal("POST logout API was not mounted")
+	}
+	if oauthRoute {
+		t.Fatal("gRPC embed mode must not proxy OAuth/OIDC routes")
 	}
 }

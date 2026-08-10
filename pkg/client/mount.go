@@ -5,19 +5,15 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
 )
 
-// MountRemote 将 auth 的 HTTP 接口以 gRPC 为后端挂载到 router 的 prefix 路由组下。
-// 登录接口（POST prefix/login）由 embed.Setup 统一注册，MountRemote 只挂载其余接口：
+// MountRemote 将 Auth 的基础 HTTP API 以 gRPC 为后端挂载到 prefix。
+// 登录接口（POST prefix/login）由 embed.Setup 注册；OAuth/OIDC 协议入口
+// 始终由独立 Auth Service 暴露，不代理到宿主应用的业务 API 前缀。
 //
-//	GET   /user/info                — 获取完整用户信息（需 token）
-//	POST  /oauth2/token             — OAuth2 token 换取
-//	POST  /oidc/token                       — 标准 OIDC token 换取
-//	GET   /.well-known/openid-configuration — OIDC 发现文档
-//	GET   /oidc/userinfo            — OIDC 用户信息（需 access_token）
-//	GET   /oidc/jwks                — JWKS 公钥
+//	GET  /user/info — 获取完整用户信息（需 token）
+//	POST /logout    — 撤销当前 token（需 token）
 func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 	g := router.Group(prefix)
 
@@ -35,79 +31,12 @@ func (c *AuthClient) MountRemote(router *gin.Engine, prefix string) {
 		gowk.Response(ctx, http.StatusOK, info, nil)
 	})
 
-	// ── OAuth2 / OIDC（无需 token） ────────────────────────────────────────
-	g.POST("/oauth2/token", func(ctx *gin.Context) {
-		// 共用 dto.OAuth2TokenRequest 校验规则；之前现场再写一份匿名 struct，
-		// 一旦 dto 演进（如新增 PKCE 字段）就有概率漂移漏掉。
-		var params dto.OAuth2TokenRequest
-		if err := ctx.ShouldBind(&params); err != nil {
-			gowk.Response(ctx, http.StatusBadRequest, nil, err)
-			return
-		}
-		resp, err := c.OAuth2Token(ctx.Request.Context(),
-			params.GrantType, params.Code, params.RedirectURI,
-			params.ClientID, params.ClientSecret, params.RefreshToken,
-			params.Scope, params.CodeVerifier)
-		if err != nil {
-			gowk.Response(ctx, http.StatusBadRequest, nil, err)
-			return
-		}
-		gowk.Response(ctx, http.StatusOK, resp, nil)
-	})
-
-	g.POST("/oidc/token", func(ctx *gin.Context) {
-		var params dto.OAuth2TokenRequest
-		if err := ctx.ShouldBind(&params); err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": err.Error()})
-			ctx.Abort()
-			return
-		}
-		resp, err := c.OAuth2Token(ctx.Request.Context(),
-			params.GrantType, params.Code, params.RedirectURI,
-			params.ClientID, params.ClientSecret, params.RefreshToken,
-			params.Scope, params.CodeVerifier)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_grant", "error_description": err.Error()})
-			ctx.Abort()
-			return
-		}
-		ctx.JSON(http.StatusOK, resp)
-		ctx.Abort()
-	})
-
-	g.GET("/.well-known/openid-configuration", func(ctx *gin.Context) {
-		resp, err := c.OIDCDiscovery(ctx.Request.Context())
-		if err != nil {
-			gowk.Response(ctx, http.StatusInternalServerError, nil, err)
-			return
-		}
-		ctx.JSON(http.StatusOK, resp)
-		ctx.Abort()
-	})
-
-	g.GET("/oidc/jwks", func(ctx *gin.Context) {
-		resp, err := c.OIDCJwks(ctx.Request.Context())
-		if err != nil {
-			gowk.Response(ctx, http.StatusInternalServerError, nil, err)
-			return
-		}
-		ctx.JSON(http.StatusOK, resp)
-		ctx.Abort()
-	})
-
-	g.GET("/oidc/userinfo", func(ctx *gin.Context) {
-		accessToken := c.bearerToken(ctx)
-		if accessToken == "" {
-			gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("access_token required"))
-			return
-		}
-		resp, err := c.OIDCUserInfo(ctx.Request.Context(), accessToken)
-		if err != nil {
+	authG.POST("/logout", func(ctx *gin.Context) {
+		if err := c.Logout(ctx.Request.Context(), c.bearerToken(ctx)); err != nil {
 			gowk.Response(ctx, http.StatusUnauthorized, nil, err)
 			return
 		}
-		ctx.JSON(http.StatusOK, resp)
-		ctx.Abort()
+		gowk.Response(ctx, http.StatusOK, map[string]string{"message": "logged out"}, nil)
 	})
 }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/iautre/gowk"
 )
 
-func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
+func routeGroup(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	var ro *gin.RouterGroup
 	if len(relativePath) > 0 {
 		ro = r.Group(relativePath[0])
@@ -16,17 +16,24 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 		ro = r
 	}
 
+	return ro
+}
+
+// API registers Auth's application-facing HTTP API. It intentionally excludes
+// OAuth/OIDC protocol endpoints and browser pages so host applications do not
+// accidentally expose an authorization server below their business API prefix.
+func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
+	ro := routeGroup(r, relativePath...)
+
 	// Create handlers with context
 	ctx := context.Background()
 	u := handler.NewUserHandler(ctx)
-	o := handler.NewOAuth2Handler(ctx, ro.BasePath())
-	oc := handler.NewOAuth2ClientHandler(ctx)
 	p := handler.NewPasskeyHandler()
 	otp := handler.NewOTPHandler()
 
 	// User endpoints
-	// 注意：/login 由调用方（cmd 独立部署 或 embed.Setup）统一注册，
-	// 避免与 embed.Setup 外层注册冲突导致 gin 重复注册 panic。
+	// 注意：POST /login 由 authhttp.MountAPI 或 embed.Setup 注册；Auth 内置的
+	// GET 登录页面仅由 cmd 独立部署入口注册。
 	ro.GET("/user/info", gowk.CheckLogin, u.UserInfo)
 	ro.PUT("/user/profile", gowk.CheckLogin, handler.BrowserSameOrigin, u.UpdateProfile)
 	ro.POST("/logout", gowk.CheckLogin, handler.BrowserSameOrigin, u.Logout)
@@ -48,12 +55,28 @@ func Router(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	// Admin endpoints (require admin middleware)
 	ro.POST("/user/:userId/reset-otp", gowk.CheckLogin, handler.AdminMiddleware, u.ResetOTPCode)
 
-	// OAuth2 endpoints
-	ro.GET("/oauth2/auth", handler.OAuth2BrowserLogin(ro.BasePath()), o.OAuth2Auth)
-	ro.POST("/oauth2/token", o.OAuth2Token)
+	return ro
+}
+
+// OAuth registers the OAuth2/OIDC authorization-server protocol surface.
+// loginURL belongs to the application that owns the browser UI. When it is
+// empty, anonymous authorization requests receive the handler's standard 401.
+func OAuth(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
+	ro := r
+	ctx := context.Background()
+	o := handler.NewOAuth2Handler(ctx)
+	oc := handler.NewOAuth2ClientHandler(ctx)
+
+	// OAuth2 endpoints. /oauth2/auth remains as a compatibility alias; new
+	// discovery documents advertise the clearer /oauth2/authorize endpoint.
+	login := handler.OAuth2BrowserLogin(loginURL)
+	ro.GET("/oauth2/authorize", login, o.OAuth2Auth)
+	ro.GET("/oauth2/auth", login, o.OAuth2Auth)
+	ro.POST("/oauth2/token", o.OIDCToken)
 
 	// OIDC endpoints
 	ro.GET("/.well-known/openid-configuration", o.OIDCDiscovery)
+	// Compatibility alias for clients that previously discovered /oidc/token.
 	ro.POST("/oidc/token", o.OIDCToken)
 	ro.GET("/oidc/userinfo", handler.OAuth2TokenMiddleware, o.OIDCUserInfo)
 	ro.GET("/oidc/jwks", o.OIDCJwks)
