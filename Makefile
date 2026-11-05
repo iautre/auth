@@ -3,7 +3,7 @@
 IMAGE     := auth
 REGISTRY  := docker.cnb.cool/autre
 IMG       := $(REGISTRY)/$(IMAGE)
-SERVER    := root@upload.autre.cn
+SERVER    := root@pixwharf.autre.cn
 HTTP_PORT := 8087
 GRPC_PORT := 50051
 
