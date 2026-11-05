@@ -183,6 +183,9 @@ func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.
 	if !client.Enabled {
 		return nil, gowk.NewError("client is disabled")
 	}
+	if err := validatePublicClientPKCE(client.Secret, req.CodeChallenge, req.CodeChallengeMethod); err != nil {
+		return nil, err
+	}
 
 	var redirectURIs []string
 	if err := json.Unmarshal([]byte(client.RedirectUris), &redirectURIs); err != nil {
@@ -350,6 +353,17 @@ func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *d
 	if err != nil {
 		return nil, err
 	}
+	challenge := ""
+	if authCode.CodeChallenge.Valid {
+		challenge = authCode.CodeChallenge.String
+	}
+	method := ""
+	if authCode.CodeChallengeMethod.Valid {
+		method = authCode.CodeChallengeMethod.String
+	}
+	if err := validatePublicClientPKCE(client.Secret, challenge, method); err != nil {
+		return nil, err
+	}
 	if err := o.verifyPKCE(authCode, req.CodeVerifier); err != nil {
 		return nil, err
 	}
@@ -367,6 +381,16 @@ func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *d
 		return nil, err
 	}
 	return o.buildTokenResponse(ctx, accessToken, refreshToken, authCode.Scope, accessTTL, true, authCode.UserID, authCode.ClientID, authCode.Nonce.String)
+}
+
+// validatePublicClientPKCE enforces RFC 7636 for native/browser clients that
+// cannot safely hold a client secret. Confidential clients may still opt into
+// PKCE, but public clients must use S256 rather than plain or no challenge.
+func validatePublicClientPKCE(clientSecret, codeChallenge, codeChallengeMethod string) error {
+	if clientSecret == "" && (codeChallenge == "" || codeChallengeMethod != "S256") {
+		return gowk.NewError("public client requires PKCE S256")
+	}
+	return nil
 }
 
 // handleRefreshTokenGrant handles refresh_token grant type.

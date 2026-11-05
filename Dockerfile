@@ -1,4 +1,4 @@
-FROM golang:1.26.4-alpine AS go-builder
+FROM golang:1.27.3-alpine AS go-builder
 
 # auth 使用远程 gowk（go.mod 中的版本，经 GOPROXY 拉取），不再依赖本地 ../gowk 源码。
 # 构建上下文即 auth 自身目录（见 Makefile），不依赖项目所在位置/父目录。

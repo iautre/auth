@@ -72,6 +72,7 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 
 		setBrowserPageHeaders(ctx)
 		passkeyPath := strings.TrimSuffix(loginPath, "/login") + "/passkey"
+		showAccountLink := options.ShowAccountLink && browserSessionUserID(ctx) > 0
 		if err := browserPageTemplate.ExecuteTemplate(ctx.Writer, "login.html", loginPageData{
 			LoginPath:                 loginPath,
 			PasskeyStatusPath:         passkeyPath + "/status",
@@ -83,7 +84,7 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 			AccountPath:               accountPath,
 			ReturnTo:                  returnTo,
 			PasskeyEnabled:            options.EnablePasskey,
-			ShowAccountLink:           options.ShowAccountLink,
+			ShowAccountLink:           showAccountLink,
 		}); err != nil {
 			ctx.Error(err)
 		}
@@ -164,6 +165,16 @@ func OAuth2BrowserLogin(loginURL string) gin.HandlerFunc {
 		ctx.Redirect(http.StatusFound, loginURL+"?"+query.Encode())
 		ctx.Abort()
 	}
+}
+
+// browserSessionUserID checks the optional browser session without writing an
+// authentication failure into the real response. Login pages use it only for
+// authenticated-only navigation such as the account management link.
+func browserSessionUserID(ctx *gin.Context) int64 {
+	probe := ctx.Copy()
+	probe.Writer = newProbeResponseWriter()
+	gowk.CheckLogin(probe)
+	return gowk.LoginId(probe)
 }
 
 func authorizationPath(loginPath string) string {

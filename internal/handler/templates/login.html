@@ -332,12 +332,19 @@
     function cancelPasskeyLogin(message = '已取消通行密钥验证', isError = false) {
       const attempt = passkeyLoginAttempt;
       if (!attempt) return;
-      passkeyLoginAttempt = null;
       attempt.cancelled = true;
       if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
       if (attempt.controller) attempt.controller.abort();
-      resetPasskeyLoginButton();
+      passkeyLogin.disabled = true;
+      passkeyLogin.textContent = '正在取消…';
       setLoginMessage(message, isError);
+      // Chrome/Android Credential Manager may acknowledge AbortController a
+      // little later than the page. Do not let a second WebAuthn request race
+      // the first one; if the promise is still pending, destroy this document
+      // so the browser must release the native request before another attempt.
+      attempt.cancelReloadID = window.setTimeout(() => {
+        if (passkeyLoginAttempt === attempt) window.location.replace(window.location.href);
+      }, 1200);
     }
 
     function resetPasskeyRegistrationButton() {
@@ -349,12 +356,16 @@
     function cancelPasskeyRegistration(message = '已取消创建通行密钥', isError = false) {
       const attempt = passkeyRegistrationAttempt;
       if (!attempt) return;
-      passkeyRegistrationAttempt = null;
       attempt.cancelled = true;
       if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
       if (attempt.controller) attempt.controller.abort();
-      resetPasskeyRegistrationButton();
+      passkeyRegister.disabled = true;
+      passkeyRegister.textContent = '正在取消…';
+      passkeyRegister.classList.add('secondary');
       setLoginMessage(message, isError);
+      attempt.cancelReloadID = window.setTimeout(() => {
+        if (passkeyRegistrationAttempt === attempt) window.location.replace(window.location.href);
+      }, 1200);
     }
 
     function decodeBase64URL(value) {
@@ -484,7 +495,7 @@
         return;
       }
 
-      const attempt = { controller: null, timeoutID: null, cancelled: false };
+      const attempt = { controller: null, timeoutID: null, cancelReloadID: null, cancelled: false };
       passkeyLoginAttempt = attempt;
       passkeyLogin.disabled = true;
       passkeyLogin.textContent = '正在准备…';
@@ -531,8 +542,15 @@
       } finally {
         if (passkeyLoginAttempt === attempt) {
           if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
-          passkeyLoginAttempt = null;
-          resetPasskeyLoginButton();
+          // AbortController may reject before Android Credential Manager has
+          // released its native request. Keep the button disabled and let the
+          // scheduled navigation destroy this document; otherwise a second
+          // click can fail with "A request is already pending".
+          if (!attempt.cancelled) {
+            if (attempt.cancelReloadID) window.clearTimeout(attempt.cancelReloadID);
+            passkeyLoginAttempt = null;
+            resetPasskeyLoginButton();
+          }
         }
       }
     });
@@ -543,7 +561,7 @@
         return;
       }
 
-      const attempt = { controller: null, timeoutID: null, cancelled: false };
+      const attempt = { controller: null, timeoutID: null, cancelReloadID: null, cancelled: false };
       passkeyRegistrationAttempt = attempt;
       passkeyRegister.disabled = true;
       passkeyRegister.textContent = '正在准备…';
@@ -598,8 +616,11 @@
       } finally {
         if (passkeyRegistrationAttempt === attempt) {
           if (attempt.timeoutID) window.clearTimeout(attempt.timeoutID);
-          passkeyRegistrationAttempt = null;
-          resetPasskeyRegistrationButton();
+          if (!attempt.cancelled) {
+            if (attempt.cancelReloadID) window.clearTimeout(attempt.cancelReloadID);
+            passkeyRegistrationAttempt = null;
+            resetPasskeyRegistrationButton();
+          }
         }
       }
     });

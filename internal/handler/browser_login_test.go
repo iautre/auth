@@ -58,6 +58,8 @@ func TestOAuth2BrowserLoginAcceptsSessionCookie(t *testing.T) {
 
 func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	store := &testTokenStore{}
+	gowk.SetTokenHandler(store)
 	router := gin.New()
 	router.GET("/api/auth/login", OIDCLoginPageFor("/oauth2/authorize", "/oauth2/auth"))
 
@@ -74,13 +76,17 @@ func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 		"使用通行密钥",
 		"取消验证",
 		"取消创建",
-		`href="/api/auth/account"`,
 		`data-passkey-status-path="/api/auth/passkey/status"`,
 		`data-passkey-credentials-path="/api/auth/passkey/credentials"`,
 		`data-passkey-login-begin-path="/api/auth/passkey/login/begin"`,
 		`data-passkey-register-begin-path="/api/auth/passkey/register/begin"`,
 		"new AbortController()",
 		"signal: attempt.controller.signal",
+		"passkeyLogin.textContent = '正在取消…'",
+		"passkeyLoginAttempt === attempt) window.location.replace(window.location.href)",
+		"passkeyRegistrationAttempt === attempt) window.location.replace(window.location.href)",
+		"if (!attempt.cancelled) {",
+		"window.clearTimeout(attempt.cancelReloadID)",
 		`device_info: deviceInfo`,
 		`id="passkey-name-dialog"`,
 		"保存并继续",
@@ -90,6 +96,21 @@ func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 		if !strings.Contains(validRecorder.Body.String(), want) {
 			t.Fatalf("embedded login page is missing %q", want)
 		}
+	}
+	if strings.Contains(validRecorder.Body.String(), `href="/api/auth/account"`) {
+		t.Fatal("anonymous login page exposes account management link")
+	}
+
+	store.tokens.Store("login-page-session", &gowk.Token{Value: "login-page-session", LoginId: 42})
+	authenticatedRecorder := httptest.NewRecorder()
+	authenticatedRequest := httptest.NewRequest(http.MethodGet, "/api/auth/login?return_to=%2Foauth2%2Fauthorize%3Fclient_id%3Dnewapi", nil)
+	authenticatedRequest.AddCookie(&http.Cookie{Name: "oidc_jwt", Value: "login-page-session"})
+	router.ServeHTTP(authenticatedRecorder, authenticatedRequest)
+	if authenticatedRecorder.Code != http.StatusOK {
+		t.Fatalf("authenticated login page status = %d, want 200", authenticatedRecorder.Code)
+	}
+	if !strings.Contains(authenticatedRecorder.Body.String(), `href="/api/auth/account"`) {
+		t.Fatal("authenticated login page is missing account management link")
 	}
 	for _, forbidden := range []string{"window.prompt", "window.confirm", "window.alert"} {
 		if strings.Contains(validRecorder.Body.String(), forbidden) {
