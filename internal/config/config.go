@@ -13,7 +13,6 @@ func getEnv(key, defaultValue string) string {
 }
 
 var authAPIPrefix = getEnv("AUTH_API_PREFIX", "")
-var authGRPCToken = os.Getenv("AUTH_GRPC_TOKEN")
 
 func AuthAPIPrefix() string {
 	prefix := authAPIPrefix
@@ -25,8 +24,4 @@ func AuthAPIPrefix() string {
 		prefix = "/" + prefix
 	}
 	return prefix
-}
-
-func AuthGRPCToken() string {
-	return authGRPCToken
 }

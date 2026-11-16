@@ -2,23 +2,17 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/iautre/auth/internal/service"
 	"github.com/iautre/auth/pkg/constant"
 	"github.com/iautre/auth/pkg/dto"
-	authpb "github.com/iautre/auth/pkg/proto"
 	"github.com/iautre/gowk"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type UserHandler struct {
@@ -42,7 +36,7 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 		return
 	}
 
-	// HTTP、gRPC 与包内嵌模式统一签发 gowk native token；OIDC ID Token 仅由 OAuth2/OIDC 流程签发。
+	// 独立部署与包内嵌模式统一签发 gowk native token；OIDC ID Token 仅由 OAuth2/OIDC 流程签发。
 	token, err := gowk.Login(ctx, user.ID)
 	if err != nil {
 		gowk.Response(ctx, http.StatusInternalServerError, nil, err)
@@ -309,126 +303,6 @@ func (o *OAuth2Handler) OIDCJwks(ctx *gin.Context) {
 	ctx.Abort()
 }
 
-// GrpcHandler 处理gRPC相关的请求
-type GrpcHandler struct {
-	oauth2Service *service.OAuth2Service
-	oidcService   *service.OIDCService
-}
-
-func NewGrpcHandler(ctx context.Context) *GrpcHandler {
-	return &GrpcHandler{
-		oauth2Service: service.NewOAuth2Service(ctx),
-		oidcService:   service.DefaultOIDCService(),
-	}
-}
-
-// OAuth2Token handles OAuth2 token endpoint - gRPC version
-func (g *GrpcHandler) OAuth2Token(ctx context.Context, req *authpb.OAuth2TokenRequest) (*authpb.OAuth2TokenResponse, error) {
-	// Convert gRPC request to internal format
-	tokenReq := &dto.OAuth2TokenRequest{
-		GrantType:    req.GrantType,
-		Code:         req.Code,
-		RedirectURI:  req.RedirectUri,
-		ClientID:     req.ClientId,
-		ClientSecret: req.ClientSecret,
-		RefreshToken: req.RefreshToken,
-		Scope:        req.Scope,
-		CodeVerifier: req.CodeVerifier,
-	}
-
-	// Use unified ExchangeToken method
-	response, err := g.oauth2Service.ExchangeToken(ctx, tokenReq)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "token exchange failed: %v", err)
-	}
-
-	// Convert to gRPC response format
-	return &authpb.OAuth2TokenResponse{
-		AccessToken:  response.AccessToken,
-		TokenType:    response.TokenType,
-		ExpiresIn:    response.ExpiresIn,
-		RefreshToken: response.RefreshToken,
-		Scope:        response.Scope,
-		IdToken:      response.IDToken,
-	}, nil
-}
-
-// OIDCUserInfo handles OIDC userinfo endpoint - gRPC version
-func (g *GrpcHandler) OIDCUserInfo(ctx context.Context, req *authpb.OIDCUserInfoRequest) (*authpb.OIDCUserInfoResponse, error) {
-	// Use OAuth2Service to validate access token
-	oauth2Token, err := g.oauth2Service.ValidateAccessToken(ctx, req.AccessToken)
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "Invalid or expired access token: %v", err)
-	}
-
-	// Use existing OIDCService to get user info
-	userInfo, err := g.oidcService.GetUserInfo(ctx, oauth2Token.UserID)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get user info: %v", err)
-	}
-
-	// Convert to gRPC response format
-	return &authpb.OIDCUserInfoResponse{
-		Sub:                 userInfo.Sub,
-		Name:                userInfo.Name,
-		Email:               userInfo.Email,
-		EmailVerified:       userInfo.EmailVerified,
-		GivenName:           userInfo.GivenName,
-		FamilyName:          userInfo.FamilyName,
-		MiddleName:          userInfo.MiddleName,
-		Nickname:            userInfo.Nickname,
-		PreferredUsername:   userInfo.PreferredUsername,
-		Picture:             userInfo.Picture,
-		PhoneNumber:         userInfo.PhoneNumber,
-		PhoneNumberVerified: userInfo.PhoneVerified,
-		Locale:              userInfo.Locale,
-		UpdatedAt:           userInfo.UpdatedAt,
-	}, nil
-}
-
-// OIDCDiscovery handles OIDC discovery endpoint - gRPC version
-func (g *GrpcHandler) OIDCDiscovery(ctx context.Context, req *emptypb.Empty) (*authpb.OIDCDiscoveryResponse, error) {
-	// Use existing OIDCService
-	discovery := g.oidcService.GetDiscoveryDocument()
-
-	// Convert to gRPC response format
-	return &authpb.OIDCDiscoveryResponse{
-		Issuer:                           discovery.Issuer,
-		AuthorizationEndpoint:            discovery.AuthorizationEndpoint,
-		TokenEndpoint:                    discovery.TokenEndpoint,
-		UserinfoEndpoint:                 discovery.UserInfoEndpoint,
-		JwksUri:                          discovery.JwksUri,
-		ScopesSupported:                  discovery.ScopesSupported,
-		ResponseTypesSupported:           discovery.ResponseTypesSupported,
-		GrantTypesSupported:              discovery.GrantTypesSupported,
-		SubjectTypesSupported:            discovery.SubjectTypesSupported,
-		IdTokenSigningAlgValuesSupported: discovery.IDTokenSigningAlgValuesSupported,
-	}, nil
-}
-
-// OIDCJwks handles OIDC JWKS endpoint - gRPC version
-func (g *GrpcHandler) OIDCJwks(ctx context.Context, req *emptypb.Empty) (*authpb.OIDCJwksResponse, error) {
-	// Use existing OIDCService
-	jwks := g.oidcService.GetJwks(ctx)
-
-	// Convert to gRPC response format
-	var keys []*authpb.OIDCJwk
-	for _, key := range jwks.Keys {
-		keys = append(keys, &authpb.OIDCJwk{
-			Kty: key.Kty,
-			Use: key.Use,
-			Kid: key.Kid,
-			N:   key.N,
-			E:   key.E,
-			Alg: key.Alg,
-		})
-	}
-
-	return &authpb.OIDCJwksResponse{
-		Keys: keys,
-	}, nil
-}
-
 // nativeToken mirrors gowk.Token JSON structure for Redis deserialization.
 type nativeToken struct {
 	Value     string `json:"value"`
@@ -439,144 +313,6 @@ type nativeToken struct {
 }
 
 const redisTokenPrefix = "ATOKEN_TOKEN_"
-
-// CheckToken 从 Redis 验证 auth 服务签发的 native token，返回用户 ID。
-// 其他服务通过 gRPC 调用此接口，无需直连 Redis 即可完成 token 鉴权。
-func (g *GrpcHandler) CheckToken(ctx context.Context, req *authpb.CheckTokenRequest) (*authpb.CheckTokenResponse, error) {
-	if req.Token == "" {
-		return nil, status.Error(codes.InvalidArgument, "token is required")
-	}
-
-	rdb := gowk.Redis()
-	if rdb == nil {
-		return nil, status.Error(codes.Unavailable, "redis not ready")
-	}
-	jsonData, err := rdb.Get(ctx, redisTokenPrefix+req.Token).Result()
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "invalid or expired token")
-	}
-
-	var t nativeToken
-	if err := json.Unmarshal([]byte(jsonData), &t); err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse token")
-	}
-
-	if t.Timeout > 0 && t.CreatedAt > 0 {
-		if time.Now().Unix() > t.CreatedAt+t.Timeout {
-			return nil, status.Error(codes.Unauthenticated, "token expired")
-		}
-	}
-
-	return &authpb.CheckTokenResponse{
-		UserId: t.LoginId,
-		Device: t.Device,
-	}, nil
-}
-
-// Logout verifies and revokes a native token stored in Auth's Redis.
-func (g *GrpcHandler) Logout(ctx context.Context, req *authpb.LogoutRequest) (*emptypb.Empty, error) {
-	if req.Token == "" {
-		return nil, status.Error(codes.InvalidArgument, "token is required")
-	}
-	if _, err := g.CheckToken(ctx, &authpb.CheckTokenRequest{Token: req.Token}); err != nil {
-		return nil, err
-	}
-	rdb := gowk.Redis()
-	if rdb == nil {
-		return nil, status.Error(codes.Unavailable, "redis not ready")
-	}
-	if err := rdb.Del(ctx, redisTokenPrefix+req.Token).Err(); err != nil {
-		return nil, status.Errorf(codes.Internal, "revoke token: %v", err)
-	}
-	return &emptypb.Empty{}, nil
-}
-
-// nativeTokenTTL 与 gowk 默认 token 超时保持一致（30 天）。
-const nativeTokenTTL int64 = 30 * 24 * 60 * 60
-
-// GetUserInfo 根据 user_id 返回昵称与用户组，供远程模式下的调用方填入 context。
-func (g *GrpcHandler) GetUserInfo(ctx context.Context, req *authpb.GetUserInfoRequest) (*authpb.GetUserInfoResponse, error) {
-	if req.UserId <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id is required")
-	}
-	var userService service.UserService
-	user, err := userService.GetById(ctx, req.UserId)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
-	}
-	return &authpb.GetUserInfoResponse{
-		UserId:   user.ID,
-		Nickname: user.Nickname.String,
-		Group:    user.Group.String,
-	}, nil
-}
-
-// Login 验证账号/OTP，签发 native token 并存入 Redis，供 CheckToken 验证。
-func (g *GrpcHandler) Login(ctx context.Context, req *authpb.LoginRequest) (*authpb.LoginResponse, error) {
-	if req.Account == "" || req.Code == "" {
-		return nil, status.Error(codes.InvalidArgument, "account and code are required")
-	}
-
-	var userService service.UserService
-	user, err := userService.Login(ctx, &dto.LoginParams{
-		Account: req.Account,
-		Code:    req.Code,
-	})
-	if err != nil {
-		return nil, status.Errorf(codes.Unauthenticated, "%v", err)
-	}
-
-	tokenValue := gowk.UUID()
-	t := nativeToken{
-		Value:     tokenValue,
-		LoginId:   user.ID,
-		Device:    req.Device,
-		Timeout:   nativeTokenTTL,
-		CreatedAt: time.Now().Unix(),
-	}
-	payload, err := json.Marshal(t)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "marshal token: %v", err)
-	}
-	rdb := gowk.Redis()
-	if rdb == nil {
-		return nil, status.Error(codes.Unavailable, "redis not ready")
-	}
-	if err := rdb.Set(ctx, redisTokenPrefix+tokenValue, string(payload), time.Duration(nativeTokenTTL)*time.Second).Err(); err != nil {
-		return nil, status.Errorf(codes.Internal, "store token: %v", err)
-	}
-
-	return &authpb.LoginResponse{
-		Token:    tokenValue,
-		UserId:   user.ID,
-		Nickname: user.Nickname.String,
-		Avatar:   user.Avatar.String,
-	}, nil
-}
-
-// GetFullUserInfo 返回完整用户信息（供远程模式的 /user/info 接口使用）。
-func (g *GrpcHandler) GetFullUserInfo(ctx context.Context, req *authpb.GetUserInfoRequest) (*authpb.FullUserInfoResponse, error) {
-	if req.UserId <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "user_id is required")
-	}
-	var userService service.UserService
-	user, err := userService.GetById(ctx, req.UserId)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, "user not found: %v", err)
-	}
-	return &authpb.FullUserInfoResponse{
-		Id:          user.ID,
-		Phone:       user.Phone.String,
-		Email:       user.Email.String,
-		Nickname:    user.Nickname.String,
-		Group:       user.Group.String,
-		Avatar:      user.Avatar.String,
-		IsVerified:  user.IsVerified.Bool,
-		Enabled:     user.Enabled,
-		LastLoginAt: user.LastLoginAt.Time.Format(time.RFC3339),
-		Created:     user.Created.Time.Format(time.RFC3339),
-	}, nil
-}
 
 // OAuth2ClientHandler handles OAuth2 client management HTTP requests
 type OAuth2ClientHandler struct {

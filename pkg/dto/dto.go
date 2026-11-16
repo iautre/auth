@@ -1,5 +1,5 @@
 // Package dto 是 auth 的纯数据传输对象集合，不依赖 internal/db 等服务端代码，
-// 因此可被 console 等远程消费方经 embed→pkg/client→pkg/dto 依赖链安全引用。
+// 因此可被第三方直接 import。
 // db 实体到 DTO 的转换（依赖 internal/db）放在服务端 internal/service。
 package dto
 

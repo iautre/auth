@@ -27,9 +27,8 @@ FROM scratch
 
 ENV GIN_MODE=release
 ENV GO_ENV=prod
-# 端口默认值（部署可由 docker run -e 覆盖）；gowk 直接读取这两个环境变量。
+# 端口默认值（部署可由 docker run -e 覆盖）；gowk 直接读取该环境变量。
 ENV HTTP_SERVER_ADDR=:8087
-ENV GRPC_SERVER_ADDR=:50051
 
 COPY --from=go-builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=go-builder /usr/share/zoneinfo/Asia/Shanghai /etc/localtime

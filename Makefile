@@ -1,14 +1,15 @@
-# Makefile for auth protobuf and sqlc code generation
+# Makefile for auth sqlc code generation and deployment
 
 IMAGE     := auth
 REGISTRY  := docker.cnb.cool/autre
 IMG       := $(REGISTRY)/$(IMAGE)
-SERVER    := root@pixwharf.autre.cn
 HTTP_PORT := 8087
-GRPC_PORT := 50051
 
-# 部署环境从 gitignore 的 .env 读取（BASE_URL / DATABASE_DSN / EMQX_AUTH_KEY）
+# 部署环境从 gitignore 的 .env 读取（BASE_URL / DATABASE_DSN / EMQX_AUTH_KEY / DEPLOY_HOST）
 -include .env
+
+# 部署目标机不在仓库里写死，取自 .env 的 DEPLOY_HOST（形如 user@host）
+SERVER ?= $(DEPLOY_HOST)
 
 # 构建运行时：有 container(Apple) 用 container，否则 docker
 RUNTIME := $(shell command -v container >/dev/null 2>&1 && echo container || echo docker)
@@ -18,27 +19,15 @@ else
 PUSH := docker push
 endif
 
-.PHONY: proto sqlc generate clean build build-image push help deploy restart logs stop migrate run install-tools check-tools
+.PHONY: sqlc generate clean build build-image push help deploy restart logs stop migrate run install-tools check-tools check-server
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  proto      - Generate protobuf Go files"
 	@echo "  sqlc       - Generate SQL code from queries"
-	@echo "  generate   - Generate both proto and sqlc files"
 	@echo "  clean      - Remove generated files"
-	@echo "  build      - Build the combined server"
+	@echo "  build      - Build the server"
 	@echo "  help       - Show this help message"
-
-# Generate protobuf files
-proto:
-	@echo "Generating protobuf files..."
-	@mkdir -p pkg/proto
-	PATH=$$PATH:$(shell go env GOPATH)/bin protoc --go_out=. --go_opt=paths=source_relative \
-	       --go-grpc_out=. --go-grpc_opt=paths=source_relative \
-	       pkg/proto/auth.proto
-	@echo "✅ Protobuf generation completed!"
-	@echo "Generated files: proto/auth.pb.go, proto/auth_grpc.pb.go"
 
 # Generate SQL code from queries
 sqlc:
@@ -51,42 +40,35 @@ sqlc:
 	@echo "✅ SQL code generation completed!"
 	@echo "Generated files in db/ directory"
 
-# Generate both proto and sqlc files
-generate: proto sqlc
+# Generate SQL code
+generate: sqlc
 	@echo "✅ All code generation completed!"
 
 # Clean generated files
 clean:
 	@echo "Cleaning generated files..."
-	@rm -f proto/auth.pb.go proto/auth_grpc.pb.go
 	@rm -rf db/*.go
 	@echo "✅ Clean completed!"
 
 # Install required tools (one-time setup)
 install-tools:
 	@echo "Installing required tools..."
-	@echo "Installing protoc plugins..."
-	go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 	@echo "Installing sqlc..."
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-	@echo "✅ All tools installed! Make sure ~/.protoc/bin is in your PATH."
+	@echo "✅ All tools installed!"
 
 # Check if tools are installed
 check-tools:
 	@echo "Checking installed tools..."
-	@command -v protoc >/dev/null 2>&1 && echo "✅ protoc found" || echo "❌ protoc not found"
-	@command -v protoc-gen-go >/dev/null 2>&1 && echo "✅ protoc-gen-go found" || echo "❌ protoc-gen-go not found"
-	@command -v protoc-gen-go-grpc >/dev/null 2>&1 && echo "✅ protoc-gen-go-grpc found" || echo "❌ protoc-gen-go-grpc not found"
 	@command -v sqlc >/dev/null 2>&1 && echo "✅ sqlc found" || echo "❌ sqlc not found"
 
 # 构建版本：注入到 gowk.Version（默认 beta），用 git tag/commit 覆盖
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo beta)
 LDFLAGS := -X github.com/iautre/gowk.Version=$(VERSION)
 
-# Build combined server (main 位于仓库根目录 main.go)
+# Build server (main 位于仓库根目录 main.go)
 build:
-	@echo "Building combined HTTP/gRPC server (version=$(VERSION))..."
+	@echo "Building HTTP server (version=$(VERSION))..."
 	go build -ldflags "$(LDFLAGS)" -o bin/server .
 	@echo "✅ Build completed! Binary: bin/server"
 
@@ -102,16 +84,20 @@ build-image:
 push:
 	$(PUSH) $(IMG):latest
 
-# Run combined server（端口走环境变量 HTTP_SERVER_ADDR / GRPC_SERVER_ADDR）
+# Run server（端口走环境变量 HTTP_SERVER_ADDR）
 run: build
-	@echo "Starting combined HTTP/gRPC server..."
+	@echo "Starting HTTP server..."
 	./bin/server
+
+## 部署目标机未配置时直接报错，避免 ssh 到空地址
+check-server:
+	@test -n "$(SERVER)" || { echo "❌ DEPLOY_HOST 未设置：在 .env 里加一行 DEPLOY_HOST=user@host"; exit 1; }
 
 ## 构建 → 推送 cnb → 服务器拉取并重启（一键部署）
 deploy: build-image push restart
 
 ## 服务器拉取最新镜像并重启容器（私有仓库需服务器先 docker login docker.cnb.cool）
-restart:
+restart: check-server
 	ssh $(SERVER) '\
 		docker pull $(IMG):latest && \
 		docker rm -f $(IMAGE) 2>/dev/null; \
@@ -121,20 +107,20 @@ restart:
 			--network-alias $(IMAGE) \
 			--restart always \
 			-e HTTP_SERVER_ADDR=:$(HTTP_PORT) \
-			-e GRPC_SERVER_ADDR=:$(GRPC_PORT) \
 			-e BASE_URL=$(BASE_URL) \
 			-e DATABASE_DSN="$(DATABASE_DSN)" \
 			-e REDIS_ADDR=redis:6379 \
 			-e EMQX_AUTH_KEY=$(EMQX_AUTH_KEY) \
+			-e EMQX_DEVICE_CREDENTIALS="$(EMQX_DEVICE_CREDENTIALS)" \
 			$(IMG):latest \
 	'
 	@echo ">>> 容器已启动，查看日志:"
 	$(MAKE) logs
 
 ## 查看服务器容器日志
-logs:
+logs: check-server
 	ssh $(SERVER) "docker logs --tail=50 $(IMAGE)"
 
 ## 停止并删除容器
-stop:
+stop: check-server
 	ssh $(SERVER) "docker rm -f $(IMAGE) || true"

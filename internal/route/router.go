@@ -32,7 +32,7 @@ func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	otp := handler.NewOTPHandler()
 
 	// User endpoints
-	// 注意：POST /login 由 authhttp.MountAPI 或 embed.Setup 注册；Auth 内置的
+	// 注意：POST /login 由 authhttp.MountAPI 注册；Auth 内置的
 	// GET 登录页面仅由 cmd 独立部署入口注册。
 	ro.GET("/user/info", gowk.CheckLogin, u.UserInfo)
 	ro.PUT("/user/profile", gowk.CheckLogin, handler.BrowserSameOrigin, u.UpdateProfile)

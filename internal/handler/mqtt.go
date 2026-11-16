@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -50,11 +51,32 @@ func (h *MqttHandler) Auth(ctx *gin.Context) {
 		return
 	}
 
-	if h.allow(ctx.Request.Context(), req.Password) {
+	if h.allow(ctx.Request.Context(), req.Password) || allowDeviceCredential(req.ClientID, req.Password) {
 		ctx.JSON(http.StatusOK, gin.H{"result": "allow"})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"result": "deny"})
+}
+
+// allowDeviceCredential 让常驻设备用静态长期凭据连 MQTT，从而完全不发 HTTP
+// 去换 token。仅对 EMQX_DEVICE_CREDENTIALS 里显式登记的 clientid 生效，
+// 不影响人和其它应用的既有校验路径。
+// 格式：clientid:secret,clientid:secret（逗号分隔，常量时间比较）。
+func allowDeviceCredential(clientID, password string) bool {
+	raw := os.Getenv("EMQX_DEVICE_CREDENTIALS")
+	if raw == "" || clientID == "" || password == "" {
+		return false
+	}
+	for _, pair := range strings.Split(raw, ",") {
+		cid, secret, ok := strings.Cut(strings.TrimSpace(pair), ":")
+		if !ok || cid != clientID {
+			continue
+		}
+		if subtle.ConstantTimeCompare([]byte(secret), []byte(password)) == 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // allow 依次尝试 native 登录 token 与 OAuth2 access_token，任一有效即放行。
