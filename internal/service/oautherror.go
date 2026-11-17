@@ -12,8 +12,10 @@ const (
 	OAuthErrUnsupportedGrantType = "unsupported_grant_type"
 	OAuthErrInvalidScope         = "invalid_scope"
 	OAuthErrAccessDenied         = "access_denied"
-	OAuthErrServerError          = "server_error"
-	OAuthErrUnavailable          = "temporarily_unavailable"
+	// RFC 8707 §2 定义的资源指示错误：请求的 resource 不被接受，或与授权时声明的不一致。
+	OAuthErrInvalidTarget = "invalid_target"
+	OAuthErrServerError   = "server_error"
+	OAuthErrUnavailable   = "temporarily_unavailable"
 )
 
 // OAuthError 表示 OAuth2 协议层错误，携带标准 error 标识与配套 HTTP 状态码。

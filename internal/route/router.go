@@ -78,19 +78,29 @@ func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 // loginURL belongs to the application that owns the browser UI. When it is
 // empty, anonymous authorization requests receive the handler's standard 401.
 // mcpPath 非空时同时暴露该 MCP 资源的 RFC 9728 元数据，供第三方客户端发现。
-func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string) *gin.RouterGroup {
+// OAuth 注册 OAuth2/OIDC 协议端点。
+//
+// mcpPath 非空表示由 Auth 自己挂载 MCP 端点；protectedResourcePath 非空表示
+// 额外发布该资源路径的 RFC 9728 元数据——宿主自己实现 /mcp 时应只设后者，
+// 否则会与 Auth 的内置 /mcp 重复注册。两者都为空时，元数据按 mcpPath 计算，
+// 保持「只配 MCPPath」的旧写法行为不变。
+func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string, protectedResourcePath string) *gin.RouterGroup {
 	ro := r
 	ctx := context.Background()
 	o := handler.NewOAuth2Handler(ctx)
 	oc := handler.NewOAuth2ClientHandler(ctx)
+	cors := handler.CredentialEndpointCORS
 
 	// OAuth2 endpoints
 	login := handler.OAuth2BrowserLogin(loginURL)
 	ro.GET("/oauth2/authorize", login, o.OAuth2Auth)
 	ro.POST("/oauth2/authorize", login, o.OAuth2AuthDecision)
-	ro.POST("/oauth2/token", o.OIDCToken)
+	// Token 开放 CORS：浏览器端 MCP 客户端换 token 时是跨域请求。
+	ro.POST("/oauth2/token", cors, o.OIDCToken)
+	ro.OPTIONS("/oauth2/token", cors)
 	// RFC 7591 动态客户端注册：MCP 客户端自助登记，不必人工建 client。
-	ro.POST("/oauth2/register", o.OAuth2Register)
+	ro.POST("/oauth2/register", cors, o.OAuth2Register)
+	ro.OPTIONS("/oauth2/register", cors)
 	// RFC 7009 撤销、RFC 7662 内省：供接入方主动失效与校验 token。
 	ro.POST("/oauth2/revoke", o.OAuth2Revoke)
 	ro.POST("/oauth2/introspect", o.OAuth2Introspect)
@@ -99,14 +109,19 @@ func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string) *gin.RouterGroup
 
 	// OIDC endpoints
 	ro.GET("/.well-known/openid-configuration", o.OIDCDiscovery)
-	ro.GET("/oidc/userinfo", handler.OAuth2TokenMiddleware, o.OIDCUserInfo)
+	ro.GET("/oidc/userinfo", cors, handler.OAuth2TokenMiddleware, o.OIDCUserInfo)
+	ro.OPTIONS("/oidc/userinfo", cors)
 	ro.GET("/oidc/jwks", o.OIDCJwks)
 
 	// RFC 9728 保护资源元数据：客户端在 /mcp 收到 401 后按这里的地址来找授权服务器。
-	// 根路径那份描述"整个服务"，带路径那份精确描述 MCP 资源，两者都给出。
-	if mcpPath != "" {
+	// 根路径那份描述"整个服务"，带路径那份精确描述资源，两者都给出。
+	resourcePath := protectedResourcePath
+	if resourcePath == "" {
+		resourcePath = mcpPath
+	}
+	if resourcePath != "" {
 		ro.GET("/.well-known/oauth-protected-resource", handler.ProtectedResourceMetadata(""))
-		ro.GET(handler.ProtectedResourceMetadataPath(mcpPath), handler.ProtectedResourceMetadata(mcpPath))
+		ro.GET(handler.ProtectedResourceMetadataPath(resourcePath), handler.ProtectedResourceMetadata(resourcePath))
 	}
 
 	// OAuth2 Client Management endpoints (admin only)

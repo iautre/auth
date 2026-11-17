@@ -56,6 +56,7 @@ type AuthOauth2AuthorizationCode struct {
 	Nonce               pgtype.Text        `json:"nonce"`
 	CodeChallenge       pgtype.Text        `json:"code_challenge"`
 	CodeChallengeMethod pgtype.Text        `json:"code_challenge_method"`
+	Resource            pgtype.Text        `json:"resource"`
 	Expires             pgtype.Timestamptz `json:"expires"`
 	Created             pgtype.Timestamptz `json:"created"`
 }
@@ -79,6 +80,7 @@ type AuthOauth2RefreshToken struct {
 	ClientID     string             `json:"client_id"`
 	UserID       int64              `json:"user_id"`
 	Scope        pgtype.Text        `json:"scope"`
+	Audience     pgtype.Text        `json:"audience"`
 	Expires      pgtype.Timestamptz `json:"expires"`
 	Created      pgtype.Timestamptz `json:"created"`
 }
@@ -89,6 +91,7 @@ type AuthOauth2Token struct {
 	ClientID    string             `json:"client_id"`
 	UserID      int64              `json:"user_id"`
 	Scope       pgtype.Text        `json:"scope"`
+	Audience    pgtype.Text        `json:"audience"`
 	Expires     pgtype.Timestamptz `json:"expires"`
 	Created     pgtype.Timestamptz `json:"created"`
 }

@@ -201,6 +201,7 @@ func (o *OAuth2Handler) issueAuthorizationCode(ctx *gin.Context, params *dto.OAu
 		params.Nonce,
 		params.CodeChallenge,
 		params.CodeChallengeMethod,
+		params.Resource,
 	)
 	if err != nil {
 		redirectOAuthErrorFrom(ctx, params.RedirectURI, params.State, err)

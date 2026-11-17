@@ -41,7 +41,7 @@ func (q *Queries) CleanupExpiredTokens(ctx context.Context) error {
 const consumeOAuth2AuthorizationCode = `-- name: ConsumeOAuth2AuthorizationCode :one
 DELETE FROM public.auth_oauth2_authorization_code
 WHERE code = $1 AND client_id = $2 AND expires > NOW()
-RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created
+RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created
 `
 
 type ConsumeOAuth2AuthorizationCodeParams struct {
@@ -62,6 +62,7 @@ func (q *Queries) ConsumeOAuth2AuthorizationCode(ctx context.Context, arg Consum
 		&i.Nonce,
 		&i.CodeChallenge,
 		&i.CodeChallengeMethod,
+		&i.Resource,
 		&i.Expires,
 		&i.Created,
 	)
@@ -69,9 +70,9 @@ func (q *Queries) ConsumeOAuth2AuthorizationCode(ctx context.Context, arg Consum
 }
 
 const createOAuth2AuthorizationCode = `-- name: CreateOAuth2AuthorizationCode :one
-INSERT INTO public.auth_oauth2_authorization_code (code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created
+INSERT INTO public.auth_oauth2_authorization_code (code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created
 `
 
 type CreateOAuth2AuthorizationCodeParams struct {
@@ -84,6 +85,7 @@ type CreateOAuth2AuthorizationCodeParams struct {
 	Nonce               pgtype.Text        `json:"nonce"`
 	CodeChallenge       pgtype.Text        `json:"code_challenge"`
 	CodeChallengeMethod pgtype.Text        `json:"code_challenge_method"`
+	Resource            pgtype.Text        `json:"resource"`
 	Expires             pgtype.Timestamptz `json:"expires"`
 }
 
@@ -98,6 +100,7 @@ func (q *Queries) CreateOAuth2AuthorizationCode(ctx context.Context, arg CreateO
 		arg.Nonce,
 		arg.CodeChallenge,
 		arg.CodeChallengeMethod,
+		arg.Resource,
 		arg.Expires,
 	)
 	var i AuthOauth2AuthorizationCode
@@ -111,6 +114,7 @@ func (q *Queries) CreateOAuth2AuthorizationCode(ctx context.Context, arg CreateO
 		&i.Nonce,
 		&i.CodeChallenge,
 		&i.CodeChallengeMethod,
+		&i.Resource,
 		&i.Expires,
 		&i.Created,
 	)
@@ -169,9 +173,9 @@ func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2Client
 }
 
 const createOAuth2RefreshToken = `-- name: CreateOAuth2RefreshToken :one
-INSERT INTO public.auth_oauth2_refresh_token (refresh_token, client_id, user_id, scope, expires, created)
-VALUES ($1, $2, $3, $4, $5, NOW())
-RETURNING refresh_token, client_id, user_id, scope, expires, created
+INSERT INTO public.auth_oauth2_refresh_token (refresh_token, client_id, user_id, scope, audience, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
+RETURNING refresh_token, client_id, user_id, scope, audience, expires, created
 `
 
 type CreateOAuth2RefreshTokenParams struct {
@@ -179,6 +183,7 @@ type CreateOAuth2RefreshTokenParams struct {
 	ClientID     string             `json:"client_id"`
 	UserID       int64              `json:"user_id"`
 	Scope        pgtype.Text        `json:"scope"`
+	Audience     pgtype.Text        `json:"audience"`
 	Expires      pgtype.Timestamptz `json:"expires"`
 }
 
@@ -188,6 +193,7 @@ func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2
 		arg.ClientID,
 		arg.UserID,
 		arg.Scope,
+		arg.Audience,
 		arg.Expires,
 	)
 	var i AuthOauth2RefreshToken
@@ -196,6 +202,7 @@ func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2
 		&i.ClientID,
 		&i.UserID,
 		&i.Scope,
+		&i.Audience,
 		&i.Expires,
 		&i.Created,
 	)
@@ -203,9 +210,9 @@ func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2
 }
 
 const createOAuth2Token = `-- name: CreateOAuth2Token :one
-INSERT INTO public.auth_oauth2_token (access_token, token_type, client_id, user_id, scope, expires, created)
-VALUES ($1, $2, $3, $4, $5, $6, NOW())
-RETURNING access_token, token_type, client_id, user_id, scope, expires, created
+INSERT INTO public.auth_oauth2_token (access_token, token_type, client_id, user_id, scope, audience, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+RETURNING access_token, token_type, client_id, user_id, scope, audience, expires, created
 `
 
 type CreateOAuth2TokenParams struct {
@@ -214,6 +221,7 @@ type CreateOAuth2TokenParams struct {
 	ClientID    string             `json:"client_id"`
 	UserID      int64              `json:"user_id"`
 	Scope       pgtype.Text        `json:"scope"`
+	Audience    pgtype.Text        `json:"audience"`
 	Expires     pgtype.Timestamptz `json:"expires"`
 }
 
@@ -224,6 +232,7 @@ func (q *Queries) CreateOAuth2Token(ctx context.Context, arg CreateOAuth2TokenPa
 		arg.ClientID,
 		arg.UserID,
 		arg.Scope,
+		arg.Audience,
 		arg.Expires,
 	)
 	var i AuthOauth2Token
@@ -233,6 +242,7 @@ func (q *Queries) CreateOAuth2Token(ctx context.Context, arg CreateOAuth2TokenPa
 		&i.ClientID,
 		&i.UserID,
 		&i.Scope,
+		&i.Audience,
 		&i.Expires,
 		&i.Created,
 	)
@@ -356,7 +366,7 @@ func (q *Queries) GetLatestOIDCJwk(ctx context.Context) (AuthOidcJwk, error) {
 }
 
 const getOAuth2AuthorizationCode = `-- name: GetOAuth2AuthorizationCode :one
-SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created
+SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created
 FROM public.auth_oauth2_authorization_code
 WHERE code = $1 AND expires > NOW()
 `
@@ -374,6 +384,7 @@ func (q *Queries) GetOAuth2AuthorizationCode(ctx context.Context, code string) (
 		&i.Nonce,
 		&i.CodeChallenge,
 		&i.CodeChallengeMethod,
+		&i.Resource,
 		&i.Expires,
 		&i.Created,
 	)
@@ -442,7 +453,7 @@ func (q *Queries) GetOAuth2ClientStats(ctx context.Context, id string) (GetOAuth
 }
 
 const getOAuth2RefreshToken = `-- name: GetOAuth2RefreshToken :one
-SELECT refresh_token, client_id, user_id, scope, expires, created
+SELECT refresh_token, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_refresh_token
 WHERE refresh_token = $1 AND expires > NOW()
 `
@@ -455,6 +466,7 @@ func (q *Queries) GetOAuth2RefreshToken(ctx context.Context, refreshToken string
 		&i.ClientID,
 		&i.UserID,
 		&i.Scope,
+		&i.Audience,
 		&i.Expires,
 		&i.Created,
 	)
@@ -468,15 +480,24 @@ WHERE user_id = $1 AND expires > NOW()
 ORDER BY created DESC
 `
 
-func (q *Queries) GetOAuth2RefreshTokensByUser(ctx context.Context, userID int64) ([]AuthOauth2RefreshToken, error) {
+type GetOAuth2RefreshTokensByUserRow struct {
+	RefreshToken string             `json:"refresh_token"`
+	ClientID     string             `json:"client_id"`
+	UserID       int64              `json:"user_id"`
+	Scope        pgtype.Text        `json:"scope"`
+	Expires      pgtype.Timestamptz `json:"expires"`
+	Created      pgtype.Timestamptz `json:"created"`
+}
+
+func (q *Queries) GetOAuth2RefreshTokensByUser(ctx context.Context, userID int64) ([]GetOAuth2RefreshTokensByUserRow, error) {
 	rows, err := q.db.Query(ctx, getOAuth2RefreshTokensByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuthOauth2RefreshToken{}
+	items := []GetOAuth2RefreshTokensByUserRow{}
 	for rows.Next() {
-		var i AuthOauth2RefreshToken
+		var i GetOAuth2RefreshTokensByUserRow
 		if err := rows.Scan(
 			&i.RefreshToken,
 			&i.ClientID,
@@ -496,7 +517,7 @@ func (q *Queries) GetOAuth2RefreshTokensByUser(ctx context.Context, userID int64
 }
 
 const getOAuth2Token = `-- name: GetOAuth2Token :one
-SELECT access_token, token_type, client_id, user_id, scope, expires, created
+SELECT access_token, token_type, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_token
 WHERE access_token = $1 AND expires > NOW()
 `
@@ -510,6 +531,7 @@ func (q *Queries) GetOAuth2Token(ctx context.Context, accessToken string) (AuthO
 		&i.ClientID,
 		&i.UserID,
 		&i.Scope,
+		&i.Audience,
 		&i.Expires,
 		&i.Created,
 	)
@@ -517,7 +539,7 @@ func (q *Queries) GetOAuth2Token(ctx context.Context, accessToken string) (AuthO
 }
 
 const getOAuth2TokensByUser = `-- name: GetOAuth2TokensByUser :many
-SELECT access_token, token_type, client_id, user_id, scope, expires, created
+SELECT access_token, token_type, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_token
 WHERE user_id = $1 AND expires > NOW()
 ORDER BY created DESC
@@ -538,6 +560,7 @@ func (q *Queries) GetOAuth2TokensByUser(ctx context.Context, userID int64) ([]Au
 			&i.ClientID,
 			&i.UserID,
 			&i.Scope,
+			&i.Audience,
 			&i.Expires,
 			&i.Created,
 		); err != nil {

@@ -12,6 +12,9 @@ type SetupOptions struct {
 	APIPrefix string
 	// MCPPath 挂载 Auth 的 MCP 端点，空表示关闭。
 	MCPPath string
+	// ProtectedResourcePath 只发布该资源路径的 RFC 9728 元数据，不注册 Auth
+	// 自己的 MCP 端点。宿主有自己的 /mcp 时用它，配合 MCPAuth 完成鉴权。
+	ProtectedResourcePath string
 	// OAuth 为真时同时挂载 OAuth2/OIDC 协议端点（固定根路径）。
 	OAuth bool
 	// Federated 为真时挂载第三方 OIDC 登录端点（固定根路径 /federated/...），
@@ -45,7 +48,11 @@ func Setup(router *gin.Engine, options SetupOptions) *Module {
 	}
 
 	if options.OAuth {
-		MountOAuth(router, OAuthOptions{LoginURL: loginURL, MCPPath: options.MCPPath})
+		MountOAuth(router, OAuthOptions{
+			LoginURL:              loginURL,
+			MCPPath:               options.MCPPath,
+			ProtectedResourcePath: options.ProtectedResourcePath,
+		})
 	}
 
 	if options.Federated {

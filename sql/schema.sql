@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_client
 
 -- OAuth2 Authorization Codes Table
 -- code_challenge / code_challenge_method 用于 PKCE（RFC 7636），public client 必填，confidential client 可选。
+-- resource 是 RFC 8707 资源指示，授权时声明、换 token 时写进 audience。
 CREATE TABLE IF NOT EXISTS public.auth_oauth2_authorization_code
 (
     code                  varchar PRIMARY KEY,
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_authorization_code
     nonce                 text,
     code_challenge        text,
     code_challenge_method varchar,
+    resource              varchar,
     expires               timestamp with time zone NOT NULL,
     created               timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT auth_oauth2_authorization_code_client_id_fkey
@@ -80,6 +82,7 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_authorization_code
 );
 
 -- OAuth2 Access Tokens Table
+-- audience 为空表示签发时未声明资源，校验方按「不绑定」处理以兼容历史 token。
 CREATE TABLE IF NOT EXISTS public.auth_oauth2_token
 (
     access_token varchar PRIMARY KEY,
@@ -87,6 +90,7 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_token
     client_id    varchar NOT NULL,
     user_id      bigint NOT NULL,
     scope        text,
+    audience     varchar,
     expires      timestamp with time zone NOT NULL,
     created      timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT auth_oauth2_token_client_id_fkey
@@ -94,12 +98,14 @@ CREATE TABLE IF NOT EXISTS public.auth_oauth2_token
 );
 
 -- OAuth2 Refresh Tokens Table
+-- audience 随刷新继承，否则刷新一次就把资源绑定洗掉了。
 CREATE TABLE IF NOT EXISTS public.auth_oauth2_refresh_token
 (
     refresh_token varchar PRIMARY KEY,
     client_id     varchar NOT NULL,
     user_id       bigint NOT NULL,
     scope         text,
+    audience      varchar,
     expires       timestamp with time zone NOT NULL,
     created       timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT auth_oauth2_refresh_token_client_id_fkey

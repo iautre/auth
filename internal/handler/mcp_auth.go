@@ -16,16 +16,17 @@ var (
 	errTokenWithoutUser = errors.New("access token is not associated with a user")
 )
 
-// MCPAuth 是 /mcp 的鉴权中间件，同时接受两类凭据：
+// MCPAuth 是 MCP 端点的鉴权中间件，同时接受两类凭据：
 //   - Authorization: Bearer <OAuth2 access token>：第三方 MCP 客户端经标准
 //     授权码流程拿到 token 后走这条；
 //   - 浏览器会话（cookie 或 gowk 自签发的 Bearer）：内置页面与本机调用走这条。
 //
 // 两种凭据都不成立时按 RFC 9728 回 401，并在 WWW-Authenticate 里给出资源
 // 元数据地址——这是客户端唯一的发现入口，缺了它客户端无法自行找到授权服务器。
-func MCPAuth(mcpPath string) gin.HandlerFunc {
-	metadataURL := gowk.BaseURL() + ProtectedResourceMetadataPath(mcpPath)
-
+//
+// metadataURL 是资源的元数据绝对地址。宿主挂载自己的 MCP 端点时，用
+// authhttp.MCPAuth 传入自己的资源路径即可得到同名行为。
+func MCPAuth(metadataURL string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if token, ok := strings.CutPrefix(ctx.GetHeader("Authorization"), "Bearer "); ok {
 			if oauth2Token, err := validateMCPAccessToken(ctx, strings.TrimSpace(token)); err == nil {

@@ -43,7 +43,9 @@ module := authhttp.Setup(r, authhttp.SetupOptions{
     APIPrefix: "/auth",   // 业务 API 前缀，空表示根路径
     OAuth:     true,      // 挂 OAuth2/OIDC 协议端点（固定根路径）
     Federated: true,      // 挂第三方 OIDC 登录（固定根路径 /federated/...）
-    MCPPath:   "/mcp",    // 挂 MCP 端点，空表示关闭
+    MCPPath:   "/mcp",    // 挂 Auth 自带的 MCP 端点，空表示关闭
+    // ProtectedResourcePath 只发布元数据、不注册端点。宿主自己实现 /mcp 时
+    // 设它并留空 MCPPath，再给宿主路由挂 authhttp.MCPAuth("/mcp")。
     Pages:     true,      // 挂内置登录页与账号中心
 })
 
@@ -57,6 +59,30 @@ gowk.RunHTTP(r)
 ```
 
 `Module` 提供三个中间件：`CheckLogin` 只验 token 并把登录 ID 写进上下文，不查库；`UserAuth` 在其上按 ID 查出用户对象（`authctx.ContextUser` 才能取到值）；`CheckAdmin` 要求管理员组。
+
+宿主想自己实现 `/mcp`、只借用 Auth 的鉴权与元数据时：
+
+```go
+module := authhttp.Setup(r, authhttp.SetupOptions{
+    OAuth:                 true,
+    ProtectedResourcePath: "/mcp", // 只发布元数据，不注册端点
+})
+
+r.POST("/mcp", authhttp.MCPAuth("/mcp"), myMCPHandler) // OAuth token 或浏览器会话双认
+```
+
+`authhttp.MCPAuth(resourcePath)` 与 Auth 内置 MCP 端点用的是同一份实现：先认 `Authorization: Bearer` 的 OAuth2 access token，再回落浏览器会话，都不成立时回 401 并在 `WWW-Authenticate` 里给出元数据地址。
+
+需要在进程内校验 token（而不是绕一趟 `/oidc/userinfo`）：
+
+```go
+info, err := authhttp.ValidateAccessToken(ctx, token)                 // 只验有效性
+info, err = authhttp.ValidateAccessTokenFor(ctx, token, "https://host.example/mcp") // 同时要求 audience 匹配
+// info.UserID / ClientID / Scope / Audience / Expires
+// 错误用 errors.Is 判 authhttp.ErrAccessTokenInvalid / ErrAccessTokenAudience
+```
+
+两种校验都不发 HTTP 请求，直接查库（走 token 缓存时连库都不查）。前提是宿主已通过 `gowk` 初始化 PostgreSQL。`audience` 传空、或 token 本身没绑定资源时不做匹配，避免把不支持 RFC 8707 的客户端一并拒掉。
 
 三个容易踩的点：
 
@@ -149,7 +175,9 @@ MCP 客户端是用户机器上的独立进程，没有浏览器 cookie，也不
 
 `/mcp` 上的工具目前只有三个：`auth_oidc_discovery`、`auth_oidc_jwks`、`auth_user_info`。都是只读的，前两个本来就是公开信息。
 
-**已知限制**：token 端点没有 CORS，所以只支持原生客户端（Claude Desktop、Cursor、mcp-inspector 这类）。跑在浏览器里的 MCP 客户端连不通。RFC 8707 的 `resource` 参数会接受但不做 audience 绑定。
+**浏览器端客户端**：`/oauth2/token`、`/oauth2/register`、`/oidc/userinfo` 已开放 CORS（含 `OPTIONS` 预检），跑在页面里的 MCP 客户端可以跨域换 token。这三个端点只认 `Authorization` 头和 client 认证、不读 cookie，所以回的是 `Access-Control-Allow-Origin: *` 而不是回显 Origin。
+
+**资源绑定（RFC 8707）**：授权请求与 token 请求都可以带 `resource` 参数，签发的 token 会把该值写进 `audience`，刷新时继承。`ValidateAccessTokenFor` 传入期望资源即可拒绝跨服务使用。不带 `resource` 的客户端拿到的 token 没有 audience，校验方按「未绑定」放行——这是为了兼容不支持该扩展的客户端，想强制隔离就不要对这类 token 开口子。
 
 ## 安全须知
 

@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -132,7 +133,7 @@ func NewOAuth2Service(_ context.Context) *OAuth2Service {
 // codeChallenge / codeChallengeMethod 用于 PKCE（RFC 7636）：
 //   - 不传则代表非 PKCE 流；
 //   - method 仅接受 "S256" / "plain"，DTO 已做绑定校验，这里再做一道保险。
-func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID string, userID int64, redirectURI, scope, state, nonce, codeChallenge, codeChallengeMethod string) (string, error) {
+func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID string, userID int64, redirectURI, scope, state, nonce, codeChallenge, codeChallengeMethod, resource string) (string, error) {
 	if codeChallenge != "" {
 		if codeChallengeMethod == "" {
 			codeChallengeMethod = "plain"
@@ -142,6 +143,11 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 		}
 	} else if codeChallengeMethod != "" {
 		return "", invalidRequest("code_challenge_method requires code_challenge")
+	}
+
+	resource, err := normalizeResource(resource)
+	if err != nil {
+		return "", err
 	}
 
 	code := gowk.GenerateRandomString(32)
@@ -157,6 +163,7 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 		Nonce:               pgtype.Text{String: nonce, Valid: nonce != ""},
 		CodeChallenge:       pgtype.Text{String: codeChallenge, Valid: codeChallenge != ""},
 		CodeChallengeMethod: pgtype.Text{String: codeChallengeMethod, Valid: codeChallenge != ""},
+		Resource:            pgtype.Text{String: resource, Valid: resource != ""},
 		Expires:             pgtype.Timestamptz{Time: expires, Valid: true},
 	}
 
@@ -165,6 +172,26 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 	}
 
 	return code, nil
+}
+
+// normalizeResource 按 RFC 8707 §2 校验资源指示：必须是绝对 URI、不含 fragment。
+// 空值合法，表示客户端没有声明资源，签发的 token 不绑定 audience。
+func normalizeResource(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if len(raw) > 2048 {
+		return "", invalidRequest("resource is too long")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || !parsed.IsAbs() || parsed.Host == "" {
+		return "", invalidRequest("resource must be an absolute URI")
+	}
+	if parsed.Fragment != "" {
+		return "", invalidRequest("resource must not contain a fragment")
+	}
+	return raw, nil
 }
 
 // AuthorizedClient 是 authorize 第一阶段校验通过后的客户端快照。
@@ -308,7 +335,9 @@ func (o *OAuth2Service) resolveTokenTTL(ctx context.Context, clientID string) (i
 }
 
 // generateAccessToken 生成并落库一枚 access token，返回 token 字符串。
-func (o *OAuth2Service) generateAccessToken(ctx context.Context, clientID string, userID int64, scope pgtype.Text, ttl int64) (string, error) {
+// audience 为空表示这次签发没有声明资源（RFC 8707 未启用或客户端没传），
+// 校验侧据此按「不绑定」处理，保持对历史 token 与旧客户端的兼容。
+func (o *OAuth2Service) generateAccessToken(ctx context.Context, clientID string, userID int64, scope pgtype.Text, audience string, ttl int64) (string, error) {
 	accessToken := gowk.GenerateRandomString(64)
 	expires := time.Now().Add(time.Duration(ttl) * time.Second)
 	if _, err := o.getQueries(ctx).CreateOAuth2Token(ctx, db2.CreateOAuth2TokenParams{
@@ -317,6 +346,7 @@ func (o *OAuth2Service) generateAccessToken(ctx context.Context, clientID string
 		ClientID:    clientID,
 		UserID:      userID,
 		Scope:       scope,
+		Audience:    pgtype.Text{String: audience, Valid: audience != ""},
 		Expires:     pgtype.Timestamptz{Time: expires, Valid: true},
 	}); err != nil {
 		return "", fmt.Errorf("failed to store access token: %w", err)
@@ -325,7 +355,8 @@ func (o *OAuth2Service) generateAccessToken(ctx context.Context, clientID string
 }
 
 // generateRefreshToken 生成并落库一枚 refresh token，返回 token 字符串。
-func (o *OAuth2Service) generateRefreshToken(ctx context.Context, clientID string, userID int64, scope pgtype.Text, ttl int64) (string, error) {
+// audience 必须随刷新继承，否则刷新一次就把资源绑定洗掉了。
+func (o *OAuth2Service) generateRefreshToken(ctx context.Context, clientID string, userID int64, scope pgtype.Text, audience string, ttl int64) (string, error) {
 	refreshToken := gowk.GenerateRandomString(64)
 	expires := time.Now().Add(time.Duration(ttl) * time.Second)
 	if _, err := o.getQueries(ctx).CreateOAuth2RefreshToken(ctx, db2.CreateOAuth2RefreshTokenParams{
@@ -333,6 +364,7 @@ func (o *OAuth2Service) generateRefreshToken(ctx context.Context, clientID strin
 		ClientID:     clientID,
 		UserID:       userID,
 		Scope:        scope,
+		Audience:     pgtype.Text{String: audience, Valid: audience != ""},
 		Expires:      pgtype.Timestamptz{Time: expires, Valid: true},
 	}); err != nil {
 		return "", fmt.Errorf("failed to store refresh token: %w", err)
@@ -411,11 +443,20 @@ func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *d
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := o.generateAccessToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, accessTTL)
+	// audience 取自授权时声明的 resource。token 端点若也带 resource，只允许与之相同，
+	// 否则等于换 token 时临时扩大访问范围（RFC 8707 §2 要求两端一致）。
+	audience := ""
+	if authCode.Resource.Valid {
+		audience = authCode.Resource.String
+	}
+	if requested := strings.TrimSpace(req.Resource); requested != "" && requested != audience {
+		return nil, newOAuthError(OAuthErrInvalidTarget, "resource does not match the authorization request", http.StatusBadRequest)
+	}
+	accessToken, err := o.generateAccessToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, audience, accessTTL)
 	if err != nil {
 		return nil, err
 	}
-	refreshToken, err := o.generateRefreshToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, refreshTTL)
+	refreshToken, err := o.generateRefreshToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, audience, refreshTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -458,11 +499,20 @@ func (o *OAuth2Service) handleRefreshTokenGrant(ctx context.Context, req *dto.OA
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, accessTTL)
+	// 刷新只能继承原 audience：允许在刷新时换 resource 就等于一张 token 可以
+	// 通过反复刷新漂移到任何服务，资源绑定形同虚设。
+	audience := ""
+	if token.Audience.Valid {
+		audience = token.Audience.String
+	}
+	if requested := strings.TrimSpace(req.Resource); requested != "" && requested != audience {
+		return nil, newOAuthError(OAuthErrInvalidTarget, "resource does not match the refresh token", http.StatusBadRequest)
+	}
+	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, audience, accessTTL)
 	if err != nil {
 		return nil, err
 	}
-	newRefreshToken, err := o.generateRefreshToken(ctx, token.ClientID, token.UserID, token.Scope, refreshTTL)
+	newRefreshToken, err := o.generateRefreshToken(ctx, token.ClientID, token.UserID, token.Scope, audience, refreshTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +595,11 @@ func (o *OAuth2Service) handleClientCredentialsGrant(ctx context.Context, req *d
 		return nil, err
 	}
 	scope := pgtype.Text{String: req.Scope, Valid: req.Scope != ""}
-	accessToken, err := o.generateAccessToken(ctx, client.ID, 0, scope, accessTTL)
+	audience, err := normalizeResource(req.Resource)
+	if err != nil {
+		return nil, err
+	}
+	accessToken, err := o.generateAccessToken(ctx, client.ID, 0, scope, audience, accessTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -590,11 +644,15 @@ func (o *OAuth2Service) RefreshToken(ctx context.Context, refreshToken string) (
 	if err != nil {
 		return nil, err
 	}
-	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, accessTTL)
+	audience := ""
+	if token.Audience.Valid {
+		audience = token.Audience.String
+	}
+	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, audience, accessTTL)
 	if err != nil {
 		return nil, err
 	}
-	newRefreshToken, err := o.generateRefreshToken(ctx, token.ClientID, token.UserID, token.Scope, refreshTTL)
+	newRefreshToken, err := o.generateRefreshToken(ctx, token.ClientID, token.UserID, token.Scope, audience, refreshTTL)
 	if err != nil {
 		return nil, err
 	}
@@ -636,6 +694,31 @@ func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken str
 	if err := o.ensureClientEnabled(ctx, token.ClientID); err != nil {
 		revokeAccessTokenCache(ctx, accessToken)
 		return nil, err
+	}
+	return token, nil
+}
+
+// ErrAudienceMismatch 表示 token 绑定的资源与校验方期望的资源不一致。
+// 用哨兵错误而不是 OAuthError，是为了让 pkg 层能用 errors.Is 判断并转成公开错误。
+var ErrAudienceMismatch = errors.New("access token was issued for a different resource")
+
+// ValidateAccessTokenFor 在 ValidateAccessToken 之上要求 audience 匹配。
+//
+// 两处刻意放行，否则会把不支持 RFC 8707 的客户端和升级前签发的 token 全部打死：
+//   - audience 为空：调用方自己不做资源绑定校验；
+//   - token 的 audience 为空：签发时客户端没声明 resource，视为未绑定。
+//
+// 只有「token 绑定了资源 且 与期望不一致」才拒。
+func (o *OAuth2Service) ValidateAccessTokenFor(ctx context.Context, accessToken, audience string) (*db2.AuthOauth2Token, error) {
+	token, err := o.ValidateAccessToken(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	if audience == "" || !token.Audience.Valid || token.Audience.String == "" {
+		return token, nil
+	}
+	if token.Audience.String != audience {
+		return nil, ErrAudienceMismatch
 	}
 	return token, nil
 }

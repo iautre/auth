@@ -40,35 +40,35 @@ SELECT id, name, secret, redirect_uris, scopes, grant_types, access_token_ttl, r
 FROM public.auth_oauth2_client;
 
 -- name: CreateOAuth2AuthorizationCode :one
-INSERT INTO public.auth_oauth2_authorization_code (code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created;
+INSERT INTO public.auth_oauth2_authorization_code (code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created;
 
 -- name: GetOAuth2AuthorizationCode :one
-SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created
+SELECT code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created
 FROM public.auth_oauth2_authorization_code
 WHERE code = $1 AND expires > NOW();
 
 -- name: ConsumeOAuth2AuthorizationCode :one
 DELETE FROM public.auth_oauth2_authorization_code
 WHERE code = $1 AND client_id = $2 AND expires > NOW()
-RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, expires, created;
+RETURNING code, client_id, user_id, redirect_uri, scope, state, nonce, code_challenge, code_challenge_method, resource, expires, created;
 
 -- name: CleanupExpiredAuthorizationCodes :exec
 DELETE FROM public.auth_oauth2_authorization_code WHERE expires <= NOW();
 
 -- name: CreateOAuth2Token :one
-INSERT INTO public.auth_oauth2_token (access_token, token_type, client_id, user_id, scope, expires, created)
-VALUES ($1, $2, $3, $4, $5, $6, NOW())
-RETURNING access_token, token_type, client_id, user_id, scope, expires, created;
+INSERT INTO public.auth_oauth2_token (access_token, token_type, client_id, user_id, scope, audience, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+RETURNING access_token, token_type, client_id, user_id, scope, audience, expires, created;
 
 -- name: GetOAuth2Token :one
-SELECT access_token, token_type, client_id, user_id, scope, expires, created
+SELECT access_token, token_type, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_token
 WHERE access_token = $1 AND expires > NOW();
 
 -- name: GetOAuth2TokensByUser :many
-SELECT access_token, token_type, client_id, user_id, scope, expires, created
+SELECT access_token, token_type, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_token
 WHERE user_id = $1 AND expires > NOW()
 ORDER BY created DESC;
@@ -83,12 +83,12 @@ DELETE FROM public.auth_oauth2_token WHERE user_id = $1;
 DELETE FROM public.auth_oauth2_token WHERE expires <= NOW();
 
 -- name: CreateOAuth2RefreshToken :one
-INSERT INTO public.auth_oauth2_refresh_token (refresh_token, client_id, user_id, scope, expires, created)
-VALUES ($1, $2, $3, $4, $5, NOW())
-RETURNING refresh_token, client_id, user_id, scope, expires, created;
+INSERT INTO public.auth_oauth2_refresh_token (refresh_token, client_id, user_id, scope, audience, expires, created)
+VALUES ($1, $2, $3, $4, $5, $6, NOW())
+RETURNING refresh_token, client_id, user_id, scope, audience, expires, created;
 
 -- name: GetOAuth2RefreshToken :one
-SELECT refresh_token, client_id, user_id, scope, expires, created
+SELECT refresh_token, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_refresh_token
 WHERE refresh_token = $1 AND expires > NOW();
 

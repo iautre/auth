@@ -115,6 +115,9 @@ type OAuth2AuthRequest struct {
 	// PKCE (RFC 7636)：public client 应当强制传入；S256 推荐，plain 仅作兼容。
 	CodeChallenge       string `json:"code_challenge,omitempty" form:"code_challenge" binding:"omitempty,min=43,max=128"`
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty" form:"code_challenge_method" binding:"omitempty,oneof=S256 plain"`
+	// Resource 是 RFC 8707 的资源指示：声明这张 token 要访问哪个资源服务器，
+	// 签发时写进 audience。留空表示不绑定，兼容不支持该扩展的客户端。
+	Resource string `json:"resource,omitempty" form:"resource" binding:"omitempty,max=2048"`
 }
 
 type OAuth2TokenRequest struct {
@@ -127,6 +130,9 @@ type OAuth2TokenRequest struct {
 	Scope        string `json:"scope" form:"scope" binding:"omitempty,min=1,max=500"`
 	// OIDC specific fields
 	CodeVerifier string `json:"code_verifier" form:"code_verifier" binding:"omitempty,min=43,max=128"` // PKCE
+	// Resource 是 RFC 8707 的资源指示。授权码流程里只允许与授权时声明的一致，
+	// 不一致按 invalid_target 拒绝，防止换 token 时放大访问范围。
+	Resource string `json:"resource" form:"resource" binding:"omitempty,max=2048"`
 }
 
 type OAuth2TokenResponse struct {

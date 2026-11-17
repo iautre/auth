@@ -57,6 +57,9 @@ func renderConsentPage(ctx *gin.Context, params *dto.OAuth2AuthRequest, client *
 			{Name: "nonce", Value: params.Nonce},
 			{Name: "code_challenge", Value: params.CodeChallenge},
 			{Name: "code_challenge_method", Value: params.CodeChallengeMethod},
+			// resource 必须回传，否则用户在确认页点"允许"这一步就把
+			// RFC 8707 的资源声明丢掉了。
+			{Name: "resource", Value: params.Resource},
 		},
 	}
 	if err := browserPageTemplate.ExecuteTemplate(ctx.Writer, "consent.html", data); err != nil {

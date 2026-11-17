@@ -33,9 +33,13 @@ type OAuthOptions struct {
 	// LoginURL is the browser login page owned by the mounting application.
 	// Empty makes anonymous authorization requests return 401 instead of redirecting.
 	LoginURL string
-	// MCPPath 是 MCP 端点路径。非空时同时暴露它的 RFC 9728 保护资源元数据，
-	// 第三方 MCP 客户端据此发现本授权服务器。
+	// MCPPath 是 Auth 自己挂载的 MCP 端点路径。非空时同时暴露它的 RFC 9728
+	// 保护资源元数据，第三方 MCP 客户端据此发现本授权服务器。
 	MCPPath string
+	// ProtectedResourcePath 只发布该资源路径的 RFC 9728 元数据，不注册 Auth
+	// 自己的 MCP 端点。宿主自己实现 /mcp 时用这一项，避免与内置端点撞路径。
+	// 为空时元数据按 MCPPath 计算，与旧行为一致。
+	ProtectedResourcePath string
 }
 
 // Module contains the mounted route group and middleware that host applications can
@@ -79,7 +83,7 @@ func MountAPI(router *gin.Engine, options APIOptions) *Module {
 		gowk.SetupMCPWithOptions(router, mcpPath, mcpserver.NewProvider(), &mcp.StreamableHTTPOptions{
 			Stateless:                    true,
 			PropagateRequestCancellation: true,
-		}, handler.MCPAuth(mcpPath))
+		}, handler.MCPAuth(gowk.BaseURL()+handler.ProtectedResourceMetadataPath(mcpPath)))
 	}
 
 	return &Module{
@@ -99,7 +103,7 @@ func MountOAuth(router *gin.Engine, options OAuthOptions) *Module {
 	// deliberately not mountable below an application API prefix: doing so would
 	// produce surprising paths and make issuer/discovery semantics ambiguous.
 	group := router.Group("")
-	route.OAuth(group, validateLoginURL(options.LoginURL), normalizePath(options.MCPPath))
+	route.OAuth(group, validateLoginURL(options.LoginURL), normalizePath(options.MCPPath), normalizePath(options.ProtectedResourcePath))
 	return &Module{
 		Group:      group,
 		CheckLogin: gowk.CheckLogin,
