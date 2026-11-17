@@ -265,7 +265,7 @@ func (s *FederatedService) resolveUser(ctx context.Context, provider *federatedP
 func (s *FederatedService) createFederatedUser(ctx context.Context, claims federatedClaims) (db2.AuthUser, error) {
 	nickname := displayNameOf(claims)
 	if nickname == "" {
-		nickname = maskTarget(ChannelEmail, claims.Email)
+		nickname = maskTarget(claims.Email)
 	}
 	if nickname == "" {
 		nickname = "用户"
@@ -280,11 +280,7 @@ func (s *FederatedService) createFederatedUser(ctx context.Context, claims feder
 		params.Email = pgtype.Text{String: claims.Email, Valid: true}
 	}
 
-	user, err := s.getQueries(ctx).CreateUser(ctx, params)
-	if err != nil {
-		return db2.AuthUser{}, friendlyUniqueViolation(err)
-	}
-	return user, nil
+	return createUserWithBootstrapAdmin(ctx, params)
 }
 
 // provider 按 name 取运行时配置，命中缓存直接返回。

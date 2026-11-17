@@ -44,7 +44,6 @@ func writeAuthError(ctx *gin.Context, err error) {
 		gowk.Response(ctx, http.StatusUnauthorized, nil, err)
 
 	case errors.Is(err, service.ErrEmailTaken),
-		errors.Is(err, service.ErrPhoneTaken),
 		errors.Is(err, service.ErrCodeInvalid),
 		errors.Is(err, service.ErrCodeExpired),
 		errors.Is(err, service.ErrCodeTooManyAttempts),

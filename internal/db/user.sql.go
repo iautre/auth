@@ -52,6 +52,19 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUse
 	return i, err
 }
 
+const hasAdminUser = `-- name: HasAdminUser :one
+SELECT EXISTS (
+    SELECT 1 FROM public.auth_user WHERE upper("group") = 'ADMIN'
+) AS has_admin
+`
+
+func (q *Queries) HasAdminUser(ctx context.Context) (bool, error) {
+	row := q.db.QueryRow(ctx, hasAdminUser)
+	var has_admin bool
+	err := row.Scan(&has_admin)
+	return has_admin, err
+}
+
 const lockUserForCredentialChange = `-- name: LockUserForCredentialChange :one
 SELECT id
 FROM public.auth_user

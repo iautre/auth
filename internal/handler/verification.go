@@ -20,7 +20,7 @@ func (h *AuthHandler) SendCode(ctx *gin.Context) {
 	}
 
 	var verificationService service.VerificationService
-	if err := verificationService.Send(ctx, params.Channel, params.Target, params.Purpose); err != nil {
+	if err := verificationService.Send(ctx, params.Target, params.Purpose); err != nil {
 		writeAuthError(ctx, err)
 		return
 	}
@@ -37,7 +37,7 @@ func (h *AuthHandler) LoginWithCode(ctx *gin.Context) {
 	}
 
 	var userService service.UserService
-	user, err := userService.LoginWithCode(ctx, params.Channel, params.Target, params.Code, config.AutoRegister())
+	user, err := userService.LoginWithCode(ctx, params.Target, params.Code, config.AutoRegister())
 	if err != nil {
 		writeAuthError(ctx, err)
 		return
@@ -57,7 +57,7 @@ func (h *AuthHandler) RegisterWithCode(ctx *gin.Context) {
 	}
 
 	var userService service.UserService
-	user, err := userService.RegisterWithCode(ctx, params.Channel, params.Target, params.Code)
+	user, err := userService.RegisterWithCode(ctx, params.Target, params.Code)
 	if err != nil {
 		writeAuthError(ctx, err)
 		return

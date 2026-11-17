@@ -38,3 +38,8 @@ SELECT id
 FROM public.auth_user
 WHERE id = $1
 FOR UPDATE;
+
+-- name: HasAdminUser :one
+SELECT EXISTS (
+    SELECT 1 FROM public.auth_user WHERE upper("group") = 'ADMIN'
+) AS has_admin;

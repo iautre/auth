@@ -40,23 +40,20 @@ type ProfileUpdateParams struct {
 
 // SendVerificationCodeParams 请求下发一次性验证码。
 type SendVerificationCodeParams struct {
-	Channel string `json:"channel" binding:"required,oneof=sms email"`
 	Target  string `json:"target" binding:"required,max=254"`
-	Purpose string `json:"purpose" binding:"required,oneof=login register verify_email verify_phone"`
+	Purpose string `json:"purpose" binding:"required,oneof=login register verify_email"`
 }
 
-// CodeLoginParams 验证码登录；目标不存在且放开自动注册时顺带建号。
+// CodeLoginParams 验证码登录；邮箱不存在且放开自动注册时顺带建号。
 type CodeLoginParams struct {
-	Channel string `json:"channel" binding:"required,oneof=sms email"`
-	Target  string `json:"target" binding:"required,max=254"`
-	Code    string `json:"code" binding:"required,len=6"`
+	Target string `json:"target" binding:"required,max=254"`
+	Code   string `json:"code" binding:"required,len=6"`
 }
 
-// CodeRegisterParams 用验证码显式注册；目标已被占用时返回 400。
+// CodeRegisterParams 用验证码显式注册；邮箱已被占用时返回 400。
 type CodeRegisterParams struct {
-	Channel string `json:"channel" binding:"required,oneof=sms email"`
-	Target  string `json:"target" binding:"required,max=254"`
-	Code    string `json:"code" binding:"required,len=6"`
+	Target string `json:"target" binding:"required,max=254"`
+	Code   string `json:"code" binding:"required,len=6"`
 }
 
 // IdentityProviderParams 新增/编辑第三方 OIDC provider。

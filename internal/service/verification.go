@@ -25,8 +25,12 @@ const (
 	verificationMaxAttempts  = 5
 )
 
+// ChannelEmail 是验证码唯一的发送通道。
+// auth_verification_code 仍保留 channel 列（后续可能重新支持短信），写库时固定填这个值。
+const ChannelEmail = "email"
+
 // emailPattern 只做形状校验：一个 @、两侧非空白、域名带点。
-// 真正能不能收到信由发送通道决定，这里不做 RFC 5322 全量匹配。
+// 真正能不能收到信由发信通道决定，这里不做 RFC 5322 全量匹配。
 var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 // 验证码相关的可判别错误。
@@ -36,7 +40,7 @@ var (
 	ErrCodeTooManyAttempts = errors.New("验证码尝试次数过多，请重新获取")
 	ErrCodeRateLimited     = errors.New("发送太频繁，请稍后再试")
 	ErrCodeDailyLimit      = errors.New("今日发送次数已达上限")
-	ErrInvalidTarget       = errors.New("手机号或邮箱格式不正确")
+	ErrInvalidTarget       = errors.New("邮箱格式不正确")
 )
 
 // VerificationService 负责一次性验证码的签发、下发与核销。
@@ -44,26 +48,18 @@ type VerificationService struct {
 	BaseService
 }
 
-// normalizeTarget 统一 target 大小写与空白，保证限速和查询命中同一条。
-func normalizeTarget(channel, target string) string {
-	target = strings.TrimSpace(target)
-	if channel == ChannelEmail {
-		return strings.ToLower(target)
-	}
-	return target
+// normalizeTarget 统一邮箱大小写与空白，保证限速和查询命中同一条。
+func normalizeTarget(target string) string {
+	return strings.ToLower(strings.TrimSpace(target))
 }
 
-// Send 生成并下发验证码。
-func (s *VerificationService) Send(ctx context.Context, channel, target, purpose string) error {
-	target = normalizeTarget(channel, target)
-	if err := validateTarget(channel, target); err != nil {
+// Send 生成并下发邮箱验证码。
+func (s *VerificationService) Send(ctx context.Context, email, purpose string) error {
+	target := normalizeTarget(email)
+	if err := validateTarget(target); err != nil {
 		return err
 	}
-
-	if channel == ChannelSMS && currentSMSSender() == nil {
-		return ErrChannelNotConfigured
-	}
-	if channel == ChannelEmail && currentMailer() == nil {
+	if currentMailer() == nil {
 		return ErrChannelNotConfigured
 	}
 
@@ -71,7 +67,7 @@ func (s *VerificationService) Send(ctx context.Context, channel, target, purpose
 	now := time.Now()
 
 	recent, err := queries.CountVerificationCodesSince(ctx, db2.CountVerificationCodesSinceParams{
-		Channel: channel,
+		Channel: ChannelEmail,
 		Target:  target,
 		Purpose: purpose,
 		Created: pgtype.Timestamptz{Time: now.Add(-verificationResendWindow), Valid: true},
@@ -100,27 +96,21 @@ func (s *VerificationService) Send(ctx context.Context, channel, target, purpose
 	}
 
 	if _, err := queries.InsertVerificationCode(ctx, db2.InsertVerificationCodeParams{
-		Channel:  channel,
+		Channel:  ChannelEmail,
 		Target:   target,
 		Purpose:  purpose,
-		CodeHash: hashVerificationCode(channel, target, purpose, code),
+		CodeHash: hashVerificationCode(target, purpose, code),
 		Expires:  pgtype.Timestamptz{Time: now.Add(verificationCodeTTL), Valid: true},
 	}); err != nil {
 		return err
 	}
 
-	if channel == ChannelSMS {
-		if err := currentSMSSender().SendCode(ctx, target, code); err != nil {
-			return err
-		}
-		return nil
-	}
 	return currentMailer().SendCode(ctx, target, code)
 }
 
 // Verify 核销验证码。成功返回 nil 并把该码标记为已消费。
-func (s *VerificationService) Verify(ctx context.Context, channel, target, purpose, code string) error {
-	target = normalizeTarget(channel, target)
+func (s *VerificationService) Verify(ctx context.Context, email, purpose, code string) error {
+	target := normalizeTarget(email)
 	code = strings.TrimSpace(code)
 	if code == "" {
 		return ErrCodeInvalid
@@ -128,7 +118,7 @@ func (s *VerificationService) Verify(ctx context.Context, channel, target, purpo
 
 	queries := s.getQueries(ctx)
 	record, err := queries.LatestVerificationCode(ctx, db2.LatestVerificationCodeParams{
-		Channel: channel,
+		Channel: ChannelEmail,
 		Target:  target,
 		Purpose: purpose,
 	})
@@ -146,7 +136,7 @@ func (s *VerificationService) Verify(ctx context.Context, channel, target, purpo
 		return ErrCodeExpired
 	}
 
-	want := hashVerificationCode(channel, target, purpose, code)
+	want := hashVerificationCode(target, purpose, code)
 	if subtle.ConstantTimeCompare([]byte(want), []byte(record.CodeHash)) != 1 {
 		if err := queries.IncrementVerificationAttempts(ctx, record.ID); err != nil {
 			return err
@@ -165,35 +155,17 @@ func (s *VerificationService) Verify(ctx context.Context, channel, target, purpo
 	return nil
 }
 
-// 验证码通道常量。
-const (
-	ChannelSMS   = "sms"
-	ChannelEmail = "email"
-)
-
-func validateTarget(channel, target string) error {
-	if target == "" {
+func validateTarget(target string) error {
+	if target == "" || !emailPattern.MatchString(target) {
 		return ErrInvalidTarget
-	}
-	switch channel {
-	case ChannelSMS:
-		if !isValidPhone(target) {
-			return ErrInvalidTarget
-		}
-	case ChannelEmail:
-		if !emailPattern.MatchString(target) {
-			return ErrInvalidTarget
-		}
-	default:
-		return fmt.Errorf("不支持的验证通道: %s", channel)
 	}
 	return nil
 }
 
-// hashVerificationCode 把通道/目标/用途一起揉进摘要，
+// hashVerificationCode 把目标/用途一起揉进摘要，
 // 同一个码发往不同目标得到不同摘要，库里的摘要无法跨目标复用。
-func hashVerificationCode(channel, target, purpose, code string) string {
-	sum := sha256.Sum256([]byte(channel + ":" + target + ":" + purpose + ":" + code))
+func hashVerificationCode(target, purpose, code string) string {
+	sum := sha256.Sum256([]byte(target + ":" + purpose + ":" + code))
 	return hex.EncodeToString(sum[:])
 }
 

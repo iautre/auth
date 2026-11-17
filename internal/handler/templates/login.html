@@ -196,7 +196,7 @@
 
     <div class="tabs" id="login-tabs" hidden>
       <button class="tab" type="button" data-tab="code">动态验证码</button>
-      <button class="tab" type="button" data-tab="sms">邮箱 / 短信验证码</button>
+      <button class="tab" type="button" data-tab="sms">邮箱验证码</button>
     </div>
 
     <form id="login-form">
@@ -208,15 +208,10 @@
     </form>
 
     <form id="sms-form" hidden>
-      <label for="sms-channel">接收方式</label>
-      <select id="sms-channel" name="channel">
-        <option value="sms">短信（手机号）</option>
-        <option value="email">邮件（邮箱）</option>
-      </select>
-      <label for="sms-target" id="sms-target-label">手机号</label>
+      <label for="sms-target">邮箱</label>
       <div class="send-row">
         <div>
-          <input id="sms-target" name="target" type="text" inputmode="tel" autocomplete="tel" required>
+          <input id="sms-target" name="target" type="email" inputmode="email" autocomplete="email" placeholder="请输入邮箱" required>
         </div>
         <button id="sms-send" class="secondary" type="button">获取验证码</button>
       </div>
@@ -236,7 +231,7 @@
     </section>
     <p id="error" role="alert" aria-live="polite"></p>
     <div class="federated" id="federated" hidden></div>
-    <p class="register-link">还没有账号？输入邮箱或手机号收码即可自动创建。</p>
+    <p class="register-link">还没有账号？输入邮箱收码即可自动创建。</p>
     {{if .ShowAccountLink}}<p class="account-link"><a href="{{.AccountPath}}">个人中心 / 管理通行密钥</a></p>{{end}}
   </main>
   <dialog id="passkey-name-dialog" aria-labelledby="passkey-name-title">
@@ -310,23 +305,10 @@
     }
 
     if (smsForm) {
-      const smsChannel = document.getElementById('sms-channel');
       const smsTarget = document.getElementById('sms-target');
       const smsSend = document.getElementById('sms-send');
-      const smsTargetLabel = document.getElementById('sms-target-label');
       const smsSubmit = document.getElementById('sms-submit');
       let countdownTimer = null;
-
-      function syncChannel() {
-        const isSms = smsChannel.value === 'sms';
-        smsTarget.type = isSms ? 'tel' : 'email';
-        smsTarget.inputMode = isSms ? 'tel' : 'email';
-        smsTarget.autocomplete = isSms ? 'tel' : 'email';
-        smsTarget.placeholder = isSms ? '请输入手机号' : '请输入邮箱';
-        smsTargetLabel.textContent = isSms ? '手机号' : '邮箱';
-      }
-      smsChannel.addEventListener('change', syncChannel);
-      syncChannel();
 
       function startCountdown() {
         let remaining = 60;
@@ -348,14 +330,14 @@
       smsSend.addEventListener('click', async () => {
         const value = smsTarget.value.trim();
         if (!value) {
-          setLoginMessage('请先填写手机号或邮箱');
+          setLoginMessage('请先填写邮箱');
           return;
         }
         smsSend.disabled = true;
         try {
           await requestJSON(container.dataset.verificationPath, {
             method: 'POST',
-            body: JSON.stringify({ channel: smsChannel.value, target: value, purpose: 'login' })
+            body: JSON.stringify({ target: value, purpose: 'login' })
           });
           setLoginMessage('验证码已发送，请查收', false);
           startCountdown();
@@ -374,7 +356,6 @@
           await requestJSON(container.dataset.codeLoginPath, {
             method: 'POST',
             body: JSON.stringify({
-              channel: smsChannel.value,
               target: smsTarget.value.trim(),
               code: smsForm.elements.code.value.trim()
             })

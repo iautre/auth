@@ -1,60 +1,34 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"net/smtp"
 	"os"
 	"strings"
 	"sync"
-	"time"
 )
 
-// ErrChannelNotConfigured 表示对应的发送通道没有配置，接口应明确拒绝而不是假装发成功。
+// ErrChannelNotConfigured 表示发信通道没有配置，接口应明确拒绝而不是假装发成功。
 var ErrChannelNotConfigured = errors.New("该验证方式尚未配置发送通道")
 
-// SMSSender 发送短信验证码。第三方接入时实现这个接口即可换成自己的短信商。
-type SMSSender interface {
-	SendCode(ctx context.Context, phone, code string) error
-}
-
-// Mailer 发送邮件验证码。
+// Mailer 发送邮箱验证码。
 type Mailer interface {
 	SendCode(ctx context.Context, email, code string) error
 }
 
 var (
 	senderOnce sync.Once
-	smsSender  SMSSender
 	mailSender Mailer
 )
 
-// InitSenders 根据环境变量装配发送通道，幂等。
-//
-// SMS 走 AUTH_SMS_WEBHOOK：POST {"phone","code"} 到你自己的网关，
-// auth 不内置任何厂商 SDK，避免包被第三方引用时带上一堆云厂商依赖。
+// InitMailer 根据环境变量装配发信通道，幂等。
 // 邮件走标准 SMTP（AUTH_SMTP_ADDR / AUTH_SMTP_USERNAME / AUTH_SMTP_PASSWORD / AUTH_SMTP_FROM）。
-func InitSenders() {
+func InitMailer() {
 	senderOnce.Do(func() {
-		if url := strings.TrimSpace(os.Getenv("AUTH_SMS_WEBHOOK")); url != "" {
-			smsSender = &webhookSMS{
-				url:   url,
-				token: strings.TrimSpace(os.Getenv("AUTH_SMS_WEBHOOK_TOKEN")),
-				client: &http.Client{
-					Timeout: 10 * time.Second,
-				},
-			}
-		} else {
-			slog.Warn("auth sms: 未配置 AUTH_SMS_WEBHOOK，短信验证码将不可用")
-		}
-
 		m, err := newSMTPMailer()
 		if err != nil {
 			slog.Warn("auth mail: SMTP 配置无效，邮件验证码将不可用", "err", err)
@@ -66,43 +40,7 @@ func InitSenders() {
 	})
 }
 
-func currentSMSSender() SMSSender { InitSenders(); return smsSender }
-func currentMailer() Mailer       { InitSenders(); return mailSender }
-
-// webhookSMS 把验证码 POST 给调用方自己的短信网关。
-type webhookSMS struct {
-	url    string
-	token  string
-	client *http.Client
-}
-
-func (w *webhookSMS) SendCode(ctx context.Context, phone, code string) error {
-	payload, err := json.Marshal(map[string]string{"phone": phone, "code": code})
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.url, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if w.token != "" {
-		req.Header.Set("Authorization", "Bearer "+w.token)
-	}
-
-	resp, err := w.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("调用短信网关失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return fmt.Errorf("短信网关返回 %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	return nil
-}
+func currentMailer() Mailer { InitMailer(); return mailSender }
 
 // smtpMailer 用标准库 SMTP 发验证码邮件。
 // 加密方式按端口自动选择：465 是隐式 TLS（SMTPS，连上即握手），其余端口走 STARTTLS。
