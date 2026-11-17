@@ -23,11 +23,12 @@ func Run() {
 	// 独立部署：业务 API + OAuth2/OIDC 协议端点 + 第三方 OIDC 登录 + 内置页面。
 	// 登录页地址按 {APIPrefix}/login 推导，协议端点与 /federated/* 固定在根路径。
 	authhttp.Setup(r, authhttp.SetupOptions{
-		APIPrefix: config.AuthAPIPrefix(),
-		MCPPath:   "/mcp",
-		OAuth:     true,
-		Federated: config.FederatedEnabled(),
-		Pages:     true,
+		APIPrefix:  config.AuthAPIPrefix(),
+		MCPPath:    "/mcp",
+		OAuth:      true,
+		Federated:  config.FederatedEnabled(),
+		DeviceFlow: config.DeviceFlowEnabled(),
+		Pages:      true,
 	})
 
 	// /health 由 gowk.New() 统一注册（存活探测），此处不再重复。

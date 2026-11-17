@@ -403,6 +403,8 @@ func (o *OAuth2Service) ExchangeToken(ctx context.Context, req *dto.OAuth2TokenR
 		return o.handleRefreshTokenGrant(ctx, req)
 	case "client_credentials":
 		return o.handleClientCredentialsGrant(ctx, req)
+	case "urn:ietf:params:oauth:grant-type:device_code":
+		return o.handleDeviceCodeGrant(ctx, req)
 	default:
 		return nil, newOAuthError(OAuthErrUnsupportedGrantType, "unsupported grant_type: "+req.GrantType, http.StatusBadRequest)
 	}
@@ -609,6 +611,51 @@ func (o *OAuth2Service) handleClientCredentialsGrant(ctx context.Context, req *d
 		ExpiresIn:   accessTTL,
 		Scope:       req.Scope,
 	}, nil
+}
+
+// handleDeviceCodeGrant handles the RFC 8628 device_code grant type.
+// 轮询到 approved 之后，CLI 拿 device_code 到这里换 token。与 authorization_code
+// 不同：没有 redirect_uri、没有 PKCE，安全性完全建立在 device_code 的高熵（256 bit）上。
+func (o *OAuth2Service) handleDeviceCodeGrant(ctx context.Context, req *dto.OAuth2TokenRequest) (*dto.OAuth2TokenResponse, error) {
+	if strings.TrimSpace(req.DeviceCode) == "" {
+		return nil, invalidRequest("device_code is required")
+	}
+	// 先原子地把 approved 翻成 consumed，成功才发 token。
+	// 这样一个 device_code 只能换出一套 token：被截获的 device_code 无法重复铸币。
+	rec, err := o.getQueries(ctx).ConsumeOAuth2DeviceCode(ctx, hashDeviceCode(req.DeviceCode))
+	if err != nil {
+		// 查无此码 或 已不是 approved（已 consumed/拒绝/过期）：统一拒绝。
+		return nil, newOAuthError(OAuthErrAccessDenied, "device_code is invalid, denied, or already used", http.StatusBadRequest)
+	}
+	if !rec.UserID.Valid || rec.UserID.Int64 <= 0 {
+		return nil, newOAuthError(OAuthErrServerError, "device authorization is missing user", http.StatusInternalServerError)
+	}
+	// client 认证：device flow 的 client 也要在 token 端点核对，防止跨 client 冒用。
+	client, err := o.authenticateClient(ctx, rec.ClientID, req.ClientSecret)
+	if err != nil {
+		return nil, err
+	}
+	if !o.supportsGrantType(client.GrantTypes, "authorization_code") {
+		return nil, newOAuthError(OAuthErrUnauthorizedClient, "client does not support device_code grant", http.StatusBadRequest)
+	}
+	accessTTL, refreshTTL, err := o.resolveTokenTTL(ctx, rec.ClientID)
+	if err != nil {
+		return nil, err
+	}
+	audience := ""
+	if rec.Resource.Valid {
+		audience = rec.Resource.String
+	}
+	scope := rec.Scope
+	accessToken, err := o.generateAccessToken(ctx, rec.ClientID, rec.UserID.Int64, scope, audience, accessTTL)
+	if err != nil {
+		return nil, err
+	}
+	refreshToken, err := o.generateRefreshToken(ctx, rec.ClientID, rec.UserID.Int64, scope, audience, refreshTTL)
+	if err != nil {
+		return nil, err
+	}
+	return o.buildTokenResponse(ctx, accessToken, refreshToken, scope, accessTTL, true, rec.UserID.Int64, rec.ClientID, "")
 }
 
 // supportsGrantType checks if client supports the specified grant type

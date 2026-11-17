@@ -121,12 +121,13 @@ type OAuth2AuthRequest struct {
 }
 
 type OAuth2TokenRequest struct {
-	GrantType    string `json:"grant_type" form:"grant_type" binding:"required,oneof=authorization_code client_credentials refresh_token"`
+	GrantType    string `json:"grant_type" form:"grant_type" binding:"required,oneof=authorization_code client_credentials refresh_token urn:ietf:params:oauth:grant-type:device_code"`
 	Code         string `json:"code" form:"code" binding:"omitempty,min=10,max=100"`
 	RedirectURI  string `json:"redirect_uri" form:"redirect_uri" binding:"omitempty,url"`
 	ClientID     string `json:"client_id" form:"client_id" binding:"omitempty,min=1,max=100"`
 	ClientSecret string `json:"client_secret" form:"client_secret" binding:"omitempty,min=16,max=128"`
 	RefreshToken string `json:"refresh_token" form:"refresh_token" binding:"omitempty,min=10,max=500"`
+	DeviceCode   string `json:"device_code" form:"device_code" binding:"omitempty,min=16,max=512"`
 	Scope        string `json:"scope" form:"scope" binding:"omitempty,min=1,max=500"`
 	// OIDC specific fields
 	CodeVerifier string `json:"code_verifier" form:"code_verifier" binding:"omitempty,min=43,max=128"` // PKCE

@@ -226,6 +226,26 @@ CREATE TABLE IF NOT EXISTS public.auth_identity_provider
     CONSTRAINT chk_auth_identity_provider_name CHECK (name ~ '^[a-z0-9_-]{2,32}$')
 );
 
+-- OAuth2 Device Authorization (RFC 8628)
+-- device_code_hash 是 device_code 的 sha256，明文 device_code 不落库；
+-- user_code 是给人核对的短码，明文存储。状态机 pending->approved->consumed。
+CREATE TABLE IF NOT EXISTS public.auth_oauth2_device_code
+(
+    device_code_hash varchar PRIMARY KEY,
+    user_code        varchar NOT NULL,
+    client_id        varchar NOT NULL,
+    scope            text,
+    resource         varchar,
+    status           varchar NOT NULL DEFAULT 'pending',
+    user_id          bigint,
+    expires          timestamp with time zone NOT NULL,
+    interval_seconds integer NOT NULL DEFAULT 5,
+    last_polled      timestamp with time zone,
+    created          timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT auth_oauth2_device_code_client_id_fkey
+        FOREIGN KEY (client_id) REFERENCES public.auth_oauth2_client (id) ON DELETE CASCADE
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_auth_user_phone   ON public.auth_user (phone);
 CREATE INDEX IF NOT EXISTS idx_auth_user_email   ON public.auth_user (email) WHERE email IS NOT NULL;
@@ -247,6 +267,8 @@ CREATE INDEX IF NOT EXISTS idx_auth_verification_lookup                 ON publi
 CREATE INDEX IF NOT EXISTS idx_auth_verification_expires                ON public.auth_verification_code (expires);
 CREATE INDEX IF NOT EXISTS idx_auth_identity_user_id                    ON public.auth_identity (user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_federated_session_expires           ON public.auth_federated_session (expires);
+CREATE INDEX IF NOT EXISTS idx_auth_oauth2_device_code_user_code        ON public.auth_oauth2_device_code (user_code);
+CREATE INDEX IF NOT EXISTS idx_auth_oauth2_device_code_expires          ON public.auth_oauth2_device_code (expires);
 
 -- Ownership
 ALTER TABLE public.auth_user                    OWNER TO postgres;
@@ -263,3 +285,4 @@ ALTER TABLE public.auth_verification_code       OWNER TO postgres;
 ALTER TABLE public.auth_identity                OWNER TO postgres;
 ALTER TABLE public.auth_federated_session       OWNER TO postgres;
 ALTER TABLE public.auth_identity_provider       OWNER TO postgres;
+ALTER TABLE public.auth_oauth2_device_code      OWNER TO postgres;

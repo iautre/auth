@@ -84,7 +84,8 @@ func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 // 额外发布该资源路径的 RFC 9728 元数据——宿主自己实现 /mcp 时应只设后者，
 // 否则会与 Auth 的内置 /mcp 重复注册。两者都为空时，元数据按 mcpPath 计算，
 // 保持「只配 MCPPath」的旧写法行为不变。
-func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string, protectedResourcePath string) *gin.RouterGroup {
+// deviceFlow 为真时额外挂载 RFC 8628 设备授权端点（device_authorization / poll / 确认页）。
+func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string, protectedResourcePath string, deviceFlow bool) *gin.RouterGroup {
 	ro := r
 	ctx := context.Background()
 	o := handler.NewOAuth2Handler(ctx)
@@ -122,6 +123,18 @@ func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string, protectedResourc
 	if resourcePath != "" {
 		ro.GET("/.well-known/oauth-protected-resource", handler.ProtectedResourceMetadata(""))
 		ro.GET(handler.ProtectedResourceMetadataPath(resourcePath), handler.ProtectedResourceMetadata(resourcePath))
+	}
+
+	// RFC 8628 设备授权：给没有浏览器、没有回调地址的客户端。
+	// device_authorization / poll 是协议端点（客户端直连，走 CORS）；/device 确认页
+	// 面向浏览器里的真人，需要登录态，未登录时跳登录页、登录后回跳。
+	if deviceFlow {
+		ro.POST("/oauth2/device_authorization", cors, o.DeviceAuthorization)
+		ro.OPTIONS("/oauth2/device_authorization", cors)
+		ro.POST("/oauth2/device_poll", cors, o.PollDeviceToken)
+		ro.OPTIONS("/oauth2/device_poll", cors)
+		ro.GET("/device", login, o.DeviceConfirmPage)
+		ro.POST("/device", login, o.DeviceConfirmDecision)
 	}
 
 	// OAuth2 Client Management endpoints (admin only)

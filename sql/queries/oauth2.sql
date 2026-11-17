@@ -107,6 +107,9 @@ DELETE FROM public.auth_oauth2_refresh_token WHERE user_id = $1;
 -- name: CleanupExpiredRefreshTokens :exec
 DELETE FROM public.auth_oauth2_refresh_token WHERE expires <= NOW();
 
+-- name: CleanupExpiredDeviceCodes :exec
+DELETE FROM public.auth_oauth2_device_code WHERE expires <= NOW();
+
 -- name: GetOAuth2ClientStats :one
 SELECT
     c.id,
@@ -146,3 +149,50 @@ LIMIT 1;
 INSERT INTO public.auth_oidc_jwk (id, kid, kty, use, alg, n, e, private_key)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, kid, kty, use, alg, n, e, private_key, created, updated;
+
+-- RFC 8628 设备授权。device_code 只存 sha256，user_code 明文供确认页展示。
+-- name: CreateOAuth2DeviceCode :one
+INSERT INTO public.auth_oauth2_device_code (device_code_hash, user_code, client_id, scope, resource, expires, interval_seconds)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created;
+
+-- name: GetOAuth2DeviceCodeByHash :one
+SELECT device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+FROM public.auth_oauth2_device_code
+WHERE device_code_hash = $1;
+
+-- 确认页只对「仍在 pending 且未过期」的请求渲染，其余情况一律查不到。
+-- 这样已用/已拒/过期/不存在的链接对外行为一致，不泄露「谁在请求什么」。
+-- name: GetPendingOAuth2DeviceCodeByUserCode :one
+SELECT device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+FROM public.auth_oauth2_device_code
+WHERE user_code = $1 AND status = 'pending' AND expires > NOW();
+
+-- 允许：原子地把 pending 翻成 approved 并记下用户。status='pending' 写进 WHERE，
+-- 靠数据库并发语义保证只能确认一次，双击/双开标签页只有一个成功。
+-- name: ApproveOAuth2DeviceCode :one
+UPDATE public.auth_oauth2_device_code
+SET status = 'approved', user_id = $2
+WHERE user_code = $1 AND status = 'pending' AND expires > NOW()
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created;
+
+-- name: DenyOAuth2DeviceCode :one
+UPDATE public.auth_oauth2_device_code
+SET status = 'denied'
+WHERE user_code = $1 AND status = 'pending' AND expires > NOW()
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created;
+
+-- 轮询节奏：记录最近一次轮询时间，供 slow_down 判断。设备码已被批准/拒绝/过期时
+-- 无需再记录，直接返回当前状态。
+-- name: RecordOAuth2DeviceCodePoll :exec
+UPDATE public.auth_oauth2_device_code
+SET last_polled = NOW()
+WHERE device_code_hash = $1 AND status = 'pending';
+
+-- 换 token：原子地把 approved 翻成 consumed，保证一个 device_code 只能换出一套 token。
+-- 换失败（已 consumed、已拒绝、已过期）影响 0 行，调用方据此拒绝。
+-- name: ConsumeOAuth2DeviceCode :one
+UPDATE public.auth_oauth2_device_code
+SET status = 'consumed'
+WHERE device_code_hash = $1 AND status = 'approved'
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created;

@@ -50,3 +50,9 @@ func AutoRegister() bool {
 func FederatedEnabled() bool {
 	return getEnvBool("AUTH_FEDERATED_ENABLED", true)
 }
+
+// DeviceFlowEnabled 控制 RFC 8628 设备授权是否开放。
+// 默认开启；给没有浏览器/回调地址的客户端（CLI、SSH、容器、对话中的 agent）用。
+func DeviceFlowEnabled() bool {
+	return getEnvBool("AUTH_DEVICE_FLOW_ENABLED", true)
+}

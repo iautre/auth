@@ -75,6 +75,20 @@ type AuthOauth2Client struct {
 	Updated         pgtype.Timestamptz `json:"updated"`
 }
 
+type AuthOauth2DeviceCode struct {
+	DeviceCodeHash  string             `json:"device_code_hash"`
+	UserCode        string             `json:"user_code"`
+	ClientID        string             `json:"client_id"`
+	Scope           pgtype.Text        `json:"scope"`
+	Resource        pgtype.Text        `json:"resource"`
+	Status          string             `json:"status"`
+	UserID          pgtype.Int8        `json:"user_id"`
+	Expires         pgtype.Timestamptz `json:"expires"`
+	IntervalSeconds int32              `json:"interval_seconds"`
+	LastPolled      pgtype.Timestamptz `json:"last_polled"`
+	Created         pgtype.Timestamptz `json:"created"`
+}
+
 type AuthOauth2RefreshToken struct {
 	RefreshToken string             `json:"refresh_token"`
 	ClientID     string             `json:"client_id"`

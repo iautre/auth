@@ -55,4 +55,7 @@ func runCleanup(ctx context.Context) {
 	if err := queries.CleanupExpiredRefreshTokens(ctx); err != nil {
 		slog.WarnContext(ctx, "cleanup expired refresh tokens failed", "err", err)
 	}
+	if err := queries.CleanupExpiredDeviceCodes(ctx); err != nil {
+		slog.WarnContext(ctx, "cleanup expired device codes failed", "err", err)
+	}
 }

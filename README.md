@@ -46,6 +46,7 @@ module := authhttp.Setup(r, authhttp.SetupOptions{
     MCPPath:   "/mcp",    // 挂 Auth 自带的 MCP 端点，空表示关闭
     // ProtectedResourcePath 只发布元数据、不注册端点。宿主自己实现 /mcp 时
     // 设它并留空 MCPPath，再给宿主路由挂 authhttp.MCPAuth("/mcp")。
+    DeviceFlow: true,     // 挂 RFC 8628 设备授权端点（CLI / SSH / 容器 / 对话里的 agent）
     Pages:     true,      // 挂内置登录页与账号中心
 })
 
@@ -83,6 +84,19 @@ info, err = authhttp.ValidateAccessTokenFor(ctx, token, "https://host.example/mc
 ```
 
 两种校验都不发 HTTP 请求，直接查库（走 token 缓存时连库都不查）。前提是宿主已通过 `gowk` 初始化 PostgreSQL。`audience` 传空、或 token 本身没绑定资源时不做匹配，避免把不支持 RFC 8707 的客户端一并拒掉。
+
+### 设备授权（RFC 8628）
+
+给没有浏览器、没有回调地址的客户端（CLI、SSH 里、容器、CI、对话里的 agent）用。开启 `DeviceFlow` 后多出三个协议端点和一个确认页：
+
+- `POST /oauth2/device_authorization`：客户端凭 `client_id`（public，无 secret）或 `client_secret` 认证，返回 `device_code`、`user_code`、`verification_uri_complete`、`expires_in`、`interval`。
+- `POST /oauth2/device_poll`：客户端拿 `device_code` 轮询，直到 `status=approved`。
+- `POST /oauth2/token`：`grant_type=urn:ietf:params:oauth:grant-type:device_code`，换 access / refresh token。
+- `GET/POST /device?user_code=...`：面向真人的确认页，展示客户端名、申请的 scope、大号的 `user_code`，给「允许 / 拒绝」。
+
+安全模型：`device_code` 只存 sha256，明文不落库；`user_code` 是 8 位免混淆短码（`XXXX-XXXX`），页面大号展示让用户核对；确认靠原子 `UPDATE ... WHERE status='pending'` 保证只生效一次；换 token 时 `approved -> consumed` 也是原子的，一个 `device_code` 只能换出一套 token。
+
+确认页四种失效情况——已用、已拒、过期、码不存在——对外都是同一句「链接已失效」，不泄露「谁在请求什么」。未登录打开确认页会先跳登录页，登录后回跳。轮询限速：低于 3 秒的连续轮询回 `slow_down`。
 
 三个容易踩的点：
 

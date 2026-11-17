@@ -15,6 +15,9 @@ type SetupOptions struct {
 	// ProtectedResourcePath 只发布该资源路径的 RFC 9728 元数据，不注册 Auth
 	// 自己的 MCP 端点。宿主有自己的 /mcp 时用它，配合 MCPAuth 完成鉴权。
 	ProtectedResourcePath string
+	// DeviceFlow 为真时挂载 RFC 8628 设备授权端点，供没有浏览器/回调地址的客户端
+	// （CLI、SSH、容器、CI、对话中的 agent）完成授权。
+	DeviceFlow bool
 	// OAuth 为真时同时挂载 OAuth2/OIDC 协议端点（固定根路径）。
 	OAuth bool
 	// Federated 为真时挂载第三方 OIDC 登录端点（固定根路径 /federated/...），
@@ -52,6 +55,7 @@ func Setup(router *gin.Engine, options SetupOptions) *Module {
 			LoginURL:              loginURL,
 			MCPPath:               options.MCPPath,
 			ProtectedResourcePath: options.ProtectedResourcePath,
+			DeviceFlow:            options.DeviceFlow,
 		})
 	}
 

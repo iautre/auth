@@ -40,6 +40,8 @@ type OAuthOptions struct {
 	// 自己的 MCP 端点。宿主自己实现 /mcp 时用这一项，避免与内置端点撞路径。
 	// 为空时元数据按 MCPPath 计算，与旧行为一致。
 	ProtectedResourcePath string
+	// DeviceFlow 为真时挂载 RFC 8628 设备授权端点（device_authorization / poll / 确认页）。
+	DeviceFlow bool
 }
 
 // Module contains the mounted route group and middleware that host applications can
@@ -103,7 +105,7 @@ func MountOAuth(router *gin.Engine, options OAuthOptions) *Module {
 	// deliberately not mountable below an application API prefix: doing so would
 	// produce surprising paths and make issuer/discovery semantics ambiguous.
 	group := router.Group("")
-	route.OAuth(group, validateLoginURL(options.LoginURL), normalizePath(options.MCPPath), normalizePath(options.ProtectedResourcePath))
+	route.OAuth(group, validateLoginURL(options.LoginURL), normalizePath(options.MCPPath), normalizePath(options.ProtectedResourcePath), options.DeviceFlow)
 	return &Module{
 		Group:      group,
 		CheckLogin: gowk.CheckLogin,

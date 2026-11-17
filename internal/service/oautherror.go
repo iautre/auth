@@ -16,6 +16,10 @@ const (
 	OAuthErrInvalidTarget = "invalid_target"
 	OAuthErrServerError   = "server_error"
 	OAuthErrUnavailable   = "temporarily_unavailable"
+	// RFC 8628 §3.5 设备授权轮询的专用错误码。
+	OAuthErrAuthorizationPending = "authorization_pending"
+	OAuthErrSlowDown             = "slow_down"
+	OAuthErrExpiredToken         = "expired_token"
 )
 
 // OAuthError 表示 OAuth2 协议层错误，携带标准 error 标识与配套 HTTP 状态码。

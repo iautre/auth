@@ -262,6 +262,7 @@
             <h2 id="identity-title">第三方账号</h2>
             <p class="subtitle">已绑定的第三方登录方式。解绑后仍可用其他方式登录。</p>
           </div>
+          <a id="manage-providers" class="button-link secondary" href="#" hidden>管理登录方式</a>
         </div>
         <div id="identity-list" class="credential-list" aria-live="polite"></div>
         <p id="identity-empty" class="empty muted" hidden>尚未绑定第三方账号。</p>
@@ -428,6 +429,13 @@
     async function loadProfile() {
       const user = await requestJSON(container.dataset.userInfoPath, { method: 'GET' });
       applyProfile(user);
+      const manageProviders = document.getElementById('manage-providers');
+      const isAdmin = String(user.group || '').toLowerCase() === 'admin';
+      if (isAdmin) {
+        const base = container.dataset.loginPath.replace(/\/login\/?$/, '');
+        manageProviders.href = `${base}/admin/providers`;
+        manageProviders.hidden = false;
+      }
     }
 
     editProfileButton.addEventListener('click', () => {

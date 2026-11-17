@@ -11,12 +11,54 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const approveOAuth2DeviceCode = `-- name: ApproveOAuth2DeviceCode :one
+UPDATE public.auth_oauth2_device_code
+SET status = 'approved', user_id = $2
+WHERE user_code = $1 AND status = 'pending' AND expires > NOW()
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+`
+
+type ApproveOAuth2DeviceCodeParams struct {
+	UserCode string      `json:"user_code"`
+	UserID   pgtype.Int8 `json:"user_id"`
+}
+
+// 允许：原子地把 pending 翻成 approved 并记下用户。status='pending' 写进 WHERE，
+// 靠数据库并发语义保证只能确认一次，双击/双开标签页只有一个成功。
+func (q *Queries) ApproveOAuth2DeviceCode(ctx context.Context, arg ApproveOAuth2DeviceCodeParams) (AuthOauth2DeviceCode, error) {
+	row := q.db.QueryRow(ctx, approveOAuth2DeviceCode, arg.UserCode, arg.UserID)
+	var i AuthOauth2DeviceCode
+	err := row.Scan(
+		&i.DeviceCodeHash,
+		&i.UserCode,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.Status,
+		&i.UserID,
+		&i.Expires,
+		&i.IntervalSeconds,
+		&i.LastPolled,
+		&i.Created,
+	)
+	return i, err
+}
+
 const cleanupExpiredAuthorizationCodes = `-- name: CleanupExpiredAuthorizationCodes :exec
 DELETE FROM public.auth_oauth2_authorization_code WHERE expires <= NOW()
 `
 
 func (q *Queries) CleanupExpiredAuthorizationCodes(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, cleanupExpiredAuthorizationCodes)
+	return err
+}
+
+const cleanupExpiredDeviceCodes = `-- name: CleanupExpiredDeviceCodes :exec
+DELETE FROM public.auth_oauth2_device_code WHERE expires <= NOW()
+`
+
+func (q *Queries) CleanupExpiredDeviceCodes(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, cleanupExpiredDeviceCodes)
 	return err
 }
 
@@ -64,6 +106,34 @@ func (q *Queries) ConsumeOAuth2AuthorizationCode(ctx context.Context, arg Consum
 		&i.CodeChallengeMethod,
 		&i.Resource,
 		&i.Expires,
+		&i.Created,
+	)
+	return i, err
+}
+
+const consumeOAuth2DeviceCode = `-- name: ConsumeOAuth2DeviceCode :one
+UPDATE public.auth_oauth2_device_code
+SET status = 'consumed'
+WHERE device_code_hash = $1 AND status = 'approved'
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+`
+
+// 换 token：原子地把 approved 翻成 consumed，保证一个 device_code 只能换出一套 token。
+// 换失败（已 consumed、已拒绝、已过期）影响 0 行，调用方据此拒绝。
+func (q *Queries) ConsumeOAuth2DeviceCode(ctx context.Context, deviceCodeHash string) (AuthOauth2DeviceCode, error) {
+	row := q.db.QueryRow(ctx, consumeOAuth2DeviceCode, deviceCodeHash)
+	var i AuthOauth2DeviceCode
+	err := row.Scan(
+		&i.DeviceCodeHash,
+		&i.UserCode,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.Status,
+		&i.UserID,
+		&i.Expires,
+		&i.IntervalSeconds,
+		&i.LastPolled,
 		&i.Created,
 	)
 	return i, err
@@ -168,6 +238,50 @@ func (q *Queries) CreateOAuth2Client(ctx context.Context, arg CreateOAuth2Client
 		&i.Enabled,
 		&i.Created,
 		&i.Updated,
+	)
+	return i, err
+}
+
+const createOAuth2DeviceCode = `-- name: CreateOAuth2DeviceCode :one
+INSERT INTO public.auth_oauth2_device_code (device_code_hash, user_code, client_id, scope, resource, expires, interval_seconds)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+`
+
+type CreateOAuth2DeviceCodeParams struct {
+	DeviceCodeHash  string             `json:"device_code_hash"`
+	UserCode        string             `json:"user_code"`
+	ClientID        string             `json:"client_id"`
+	Scope           pgtype.Text        `json:"scope"`
+	Resource        pgtype.Text        `json:"resource"`
+	Expires         pgtype.Timestamptz `json:"expires"`
+	IntervalSeconds int32              `json:"interval_seconds"`
+}
+
+// RFC 8628 设备授权。device_code 只存 sha256，user_code 明文供确认页展示。
+func (q *Queries) CreateOAuth2DeviceCode(ctx context.Context, arg CreateOAuth2DeviceCodeParams) (AuthOauth2DeviceCode, error) {
+	row := q.db.QueryRow(ctx, createOAuth2DeviceCode,
+		arg.DeviceCodeHash,
+		arg.UserCode,
+		arg.ClientID,
+		arg.Scope,
+		arg.Resource,
+		arg.Expires,
+		arg.IntervalSeconds,
+	)
+	var i AuthOauth2DeviceCode
+	err := row.Scan(
+		&i.DeviceCodeHash,
+		&i.UserCode,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.Status,
+		&i.UserID,
+		&i.Expires,
+		&i.IntervalSeconds,
+		&i.LastPolled,
+		&i.Created,
 	)
 	return i, err
 }
@@ -289,6 +403,32 @@ func (q *Queries) CreateOIDCJwk(ctx context.Context, arg CreateOIDCJwkParams) (A
 		&i.PrivateKey,
 		&i.Created,
 		&i.Updated,
+	)
+	return i, err
+}
+
+const denyOAuth2DeviceCode = `-- name: DenyOAuth2DeviceCode :one
+UPDATE public.auth_oauth2_device_code
+SET status = 'denied'
+WHERE user_code = $1 AND status = 'pending' AND expires > NOW()
+RETURNING device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+`
+
+func (q *Queries) DenyOAuth2DeviceCode(ctx context.Context, userCode string) (AuthOauth2DeviceCode, error) {
+	row := q.db.QueryRow(ctx, denyOAuth2DeviceCode, userCode)
+	var i AuthOauth2DeviceCode
+	err := row.Scan(
+		&i.DeviceCodeHash,
+		&i.UserCode,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.Status,
+		&i.UserID,
+		&i.Expires,
+		&i.IntervalSeconds,
+		&i.LastPolled,
+		&i.Created,
 	)
 	return i, err
 }
@@ -452,6 +592,31 @@ func (q *Queries) GetOAuth2ClientStats(ctx context.Context, id string) (GetOAuth
 	return i, err
 }
 
+const getOAuth2DeviceCodeByHash = `-- name: GetOAuth2DeviceCodeByHash :one
+SELECT device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+FROM public.auth_oauth2_device_code
+WHERE device_code_hash = $1
+`
+
+func (q *Queries) GetOAuth2DeviceCodeByHash(ctx context.Context, deviceCodeHash string) (AuthOauth2DeviceCode, error) {
+	row := q.db.QueryRow(ctx, getOAuth2DeviceCodeByHash, deviceCodeHash)
+	var i AuthOauth2DeviceCode
+	err := row.Scan(
+		&i.DeviceCodeHash,
+		&i.UserCode,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.Status,
+		&i.UserID,
+		&i.Expires,
+		&i.IntervalSeconds,
+		&i.LastPolled,
+		&i.Created,
+	)
+	return i, err
+}
+
 const getOAuth2RefreshToken = `-- name: GetOAuth2RefreshToken :one
 SELECT refresh_token, client_id, user_id, scope, audience, expires, created
 FROM public.auth_oauth2_refresh_token
@@ -598,6 +763,33 @@ func (q *Queries) GetOIDCJwk(ctx context.Context, kid string) (AuthOidcJwk, erro
 	return i, err
 }
 
+const getPendingOAuth2DeviceCodeByUserCode = `-- name: GetPendingOAuth2DeviceCodeByUserCode :one
+SELECT device_code_hash, user_code, client_id, scope, resource, status, user_id, expires, interval_seconds, last_polled, created
+FROM public.auth_oauth2_device_code
+WHERE user_code = $1 AND status = 'pending' AND expires > NOW()
+`
+
+// 确认页只对「仍在 pending 且未过期」的请求渲染，其余情况一律查不到。
+// 这样已用/已拒/过期/不存在的链接对外行为一致，不泄露「谁在请求什么」。
+func (q *Queries) GetPendingOAuth2DeviceCodeByUserCode(ctx context.Context, userCode string) (AuthOauth2DeviceCode, error) {
+	row := q.db.QueryRow(ctx, getPendingOAuth2DeviceCodeByUserCode, userCode)
+	var i AuthOauth2DeviceCode
+	err := row.Scan(
+		&i.DeviceCodeHash,
+		&i.UserCode,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.Status,
+		&i.UserID,
+		&i.Expires,
+		&i.IntervalSeconds,
+		&i.LastPolled,
+		&i.Created,
+	)
+	return i, err
+}
+
 const listOAuth2Client = `-- name: ListOAuth2Client :many
 SELECT id, name, secret, redirect_uris, scopes, grant_types, access_token_ttl, refresh_token_ttl, enabled, created, updated
 FROM public.auth_oauth2_client
@@ -670,6 +862,19 @@ func (q *Queries) ListOIDCJwks(ctx context.Context) ([]AuthOidcJwk, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordOAuth2DeviceCodePoll = `-- name: RecordOAuth2DeviceCodePoll :exec
+UPDATE public.auth_oauth2_device_code
+SET last_polled = NOW()
+WHERE device_code_hash = $1 AND status = 'pending'
+`
+
+// 轮询节奏：记录最近一次轮询时间，供 slow_down 判断。设备码已被批准/拒绝/过期时
+// 无需再记录，直接返回当前状态。
+func (q *Queries) RecordOAuth2DeviceCodePoll(ctx context.Context, deviceCodeHash string) error {
+	_, err := q.db.Exec(ctx, recordOAuth2DeviceCodePoll, deviceCodeHash)
+	return err
 }
 
 const revokeOAuth2RefreshToken = `-- name: RevokeOAuth2RefreshToken :exec
