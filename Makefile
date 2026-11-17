@@ -97,6 +97,8 @@ check-server:
 deploy: build-image push restart
 
 ## 服务器拉取最新镜像并重启容器（私有仓库需服务器先 docker login docker.cnb.cool）
+## 敏感项（AUTH_ENCRYPTION_KEY / AUTH_SMTP_*）不放命令行走 shell，改由服务器上的
+## env-file 注入：docker --env-file 逐行读取、不做变量展开，密码里的 $ 等字符原样保留。
 restart: check-server
 	ssh $(SERVER) '\
 		docker pull $(IMG):latest && \
@@ -106,6 +108,7 @@ restart: check-server
 			--network docker_net \
 			--network-alias $(IMAGE) \
 			--restart always \
+			--env-file /app/docker/auth/auth.env \
 			-e HTTP_SERVER_ADDR=:$(HTTP_PORT) \
 			-e BASE_URL=$(BASE_URL) \
 			-e DATABASE_DSN="$(DATABASE_DSN)" \
