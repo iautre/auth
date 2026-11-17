@@ -130,8 +130,8 @@ MCP 客户端          宿主进程 /mcp           auth 授权服务器
 | | `auth_oauth2_token` | access token（audience） |
 | | `auth_oauth2_refresh_token` | refresh token（audience） |
 | | `auth_oauth2_device_code` | 设备授权（RFC 8628） |
-| 联邦登录域 | `auth_identity_provider` | 第三方 IdP 配置（admin 管理） |
-| | `auth_identity` | 用户-IdP 绑定 |
+| 联邦登录域 | `auth_identity_provider` | 第三方 IdP 配置（**系统级**，admin 管理） |
+| | `auth_identity` | 用户-IdP 绑定（**用户级**） |
 | | `auth_federated_session` | 登录会话 state/nonce/verifier |
 | 验证码 | `auth_verification_code` | 短信/邮箱一次性验证码 |
 | 密钥 | `auth_oidc_jwk` | OIDC 签名私钥（只暴露 n/e） |
@@ -141,6 +141,22 @@ MCP 客户端          宿主进程 /mcp           auth 授权服务器
 - `user_id → auth_user(id)`：otp_credential、otp_enrollment、passkey_credential、identity、authorization_code、token、refresh_token（device_code 的 user_id 也指向 user，但允许为空，待批准）。
 - `client_id → auth_oauth2_client(id)`：authorization_code、token、refresh_token、device_code。
 - `oidc_jwk` 无外键，独立存签名私钥。
+
+归属划分（用户级 vs 系统级）：
+
+| 级别 | 表 | 说明 |
+|---|---|---|
+| 用户级 | `auth_otp_credential` / `auth_otp_enrollment` / `auth_passkey_credential` / `auth_passkey_challenge` | 挂在 `user_id` 下，一个用户多条，只服务自己 |
+| 用户级 | `auth_identity` | 某个用户「绑定了哪个外部账号」，`List/Unlink` 只按 `gowk.LoginId` 查自己 |
+| 系统级 | `auth_identity_provider` | 全局配了哪些 IdP，管理员在 `/admin/providers` 配，所有用户共用 |
+| 系统级 | `auth_oauth2_client` | 接入的 OAuth2 客户端，全局 |
+| 系统级 | `auth_oidc_jwk` | 签名私钥，全局 |
+
+页面权限边界：
+
+- **`/admin/providers`（第三方配置）**：`CheckLogin + AdminMiddleware`，仅 `group=ADMIN` 可进，管的是系统级 `auth_identity_provider`。
+- **`/account` 的「第三方账号」区块**：调 `GET /identities`，`IdentityHandler.List` 只查 `gowk.LoginId(ctx)`（当前登录用户自己）绑定的 `auth_identity`，展示与解绑都只作用于自己。
+- 解绑保护：`Unlink` 要求解绑后**至少还剩一种登录方式**，否则回 `ErrLastAuthenticationMethod`，防止用户把自己唯一登录方式解绑掉。
 
 状态机（设备授权）：`pending → approved → consumed`。
 
