@@ -64,6 +64,8 @@ github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aN
 github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/iautre/gowk v0.0.0-20261117040854-634556cc824c h1:qh4nCqiIDOvlC1TYpaHeCHqVgS+bRD3F8CNgIn2t0Mk=
 github.com/iautre/gowk v0.0.0-20261117040854-634556cc824c/go.mod h1:knMaSAJWS0ZrfXo8uowpPl6nY9XbCHRzCw6CRS8Oy6E=
+github.com/iautre/gowk v0.0.0-20261117081657-2145645198e7 h1:K4YSL3tdUHjL6ujCECFDQUT6CPaAZ4m/F1X99rq+6y4=
+github.com/iautre/gowk v0.0.0-20261117081657-2145645198e7/go.mod h1:knMaSAJWS0ZrfXo8uowpPl6nY9XbCHRzCw6CRS8Oy6E=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
 github.com/jackc/pgpassfile v1.0.0/go.mod h1:CEx0iS5ambNFdcRtxPj5JhEz+xB6uRky5eyVu/W2HEg=
 github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 h1:iCEnooe7UlwOQYpKFhBabPMi4aNAfoODPEFNiAnClxo=
