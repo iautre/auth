@@ -8,6 +8,44 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthFederatedSession struct {
+	StateHash    string             `json:"state_hash"`
+	Provider     string             `json:"provider"`
+	Nonce        string             `json:"nonce"`
+	CodeVerifier string             `json:"code_verifier"`
+	ReturnTo     pgtype.Text        `json:"return_to"`
+	Expires      pgtype.Timestamptz `json:"expires"`
+	Created      pgtype.Timestamptz `json:"created"`
+}
+
+type AuthIdentity struct {
+	ID            int64              `json:"id"`
+	UserID        int64              `json:"user_id"`
+	Provider      string             `json:"provider"`
+	Issuer        string             `json:"issuer"`
+	Subject       string             `json:"subject"`
+	Email         pgtype.Text        `json:"email"`
+	EmailVerified bool               `json:"email_verified"`
+	DisplayName   pgtype.Text        `json:"display_name"`
+	Avatar        pgtype.Text        `json:"avatar"`
+	Created       pgtype.Timestamptz `json:"created"`
+	Updated       pgtype.Timestamptz `json:"updated"`
+}
+
+type AuthIdentityProvider struct {
+	ID           int64              `json:"id"`
+	Name         string             `json:"name"`
+	Label        string             `json:"label"`
+	Issuer       string             `json:"issuer"`
+	ClientID     string             `json:"client_id"`
+	ClientSecret string             `json:"client_secret"`
+	Scopes       string             `json:"scopes"`
+	AutoRegister bool               `json:"auto_register"`
+	Enabled      bool               `json:"enabled"`
+	Created      pgtype.Timestamptz `json:"created"`
+	Updated      pgtype.Timestamptz `json:"updated"`
+}
+
 type AuthOauth2AuthorizationCode struct {
 	Code                string             `json:"code"`
 	ClientID            string             `json:"client_id"`
@@ -132,4 +170,16 @@ type AuthUser struct {
 	LoginCount  pgtype.Int4        `json:"login_count"`
 	Avatar      pgtype.Text        `json:"avatar"`
 	IsVerified  pgtype.Bool        `json:"is_verified"`
+}
+
+type AuthVerificationCode struct {
+	ID         int64              `json:"id"`
+	Channel    string             `json:"channel"`
+	Target     string             `json:"target"`
+	Purpose    string             `json:"purpose"`
+	CodeHash   string             `json:"code_hash"`
+	Attempts   int32              `json:"attempts"`
+	Expires    pgtype.Timestamptz `json:"expires"`
+	ConsumedAt pgtype.Timestamptz `json:"consumed_at"`
+	Created    pgtype.Timestamptz `json:"created"`
 }

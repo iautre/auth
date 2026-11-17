@@ -11,6 +11,47 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createUser = `-- name: CreateUser :one
+INSERT INTO public.auth_user (phone, email, nickname, "group", enabled, is_verified)
+VALUES ($1, $2, $3, $4, true, $5)
+RETURNING id, phone, email, nickname, "group", enabled, created, updated, aid, last_login_at, login_count, avatar, is_verified
+`
+
+type CreateUserParams struct {
+	Phone      pgtype.Text `json:"phone"`
+	Email      pgtype.Text `json:"email"`
+	Nickname   pgtype.Text `json:"nickname"`
+	Group      pgtype.Text `json:"group"`
+	IsVerified pgtype.Bool `json:"is_verified"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (AuthUser, error) {
+	row := q.db.QueryRow(ctx, createUser,
+		arg.Phone,
+		arg.Email,
+		arg.Nickname,
+		arg.Group,
+		arg.IsVerified,
+	)
+	var i AuthUser
+	err := row.Scan(
+		&i.ID,
+		&i.Phone,
+		&i.Email,
+		&i.Nickname,
+		&i.Group,
+		&i.Enabled,
+		&i.Created,
+		&i.Updated,
+		&i.Aid,
+		&i.LastLoginAt,
+		&i.LoginCount,
+		&i.Avatar,
+		&i.IsVerified,
+	)
+	return i, err
+}
+
 const lockUserForCredentialChange = `-- name: LockUserForCredentialChange :one
 SELECT id
 FROM public.auth_user
@@ -64,6 +105,33 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const userByEmail = `-- name: UserByEmail :one
+SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, last_login_at, login_count, avatar, is_verified
+FROM public.auth_user
+WHERE lower(email) = lower($1)
+`
+
+func (q *Queries) UserByEmail(ctx context.Context, lower string) (AuthUser, error) {
+	row := q.db.QueryRow(ctx, userByEmail, lower)
+	var i AuthUser
+	err := row.Scan(
+		&i.ID,
+		&i.Phone,
+		&i.Email,
+		&i.Nickname,
+		&i.Group,
+		&i.Enabled,
+		&i.Created,
+		&i.Updated,
+		&i.Aid,
+		&i.LastLoginAt,
+		&i.LoginCount,
+		&i.Avatar,
+		&i.IsVerified,
+	)
+	return i, err
 }
 
 const userById = `-- name: UserById :one

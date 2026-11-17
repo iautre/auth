@@ -3,14 +3,6 @@
 // db 实体到 DTO 的转换（依赖 internal/db）放在服务端 internal/service。
 package dto
 
-// User registration parameters
-type RegisterParams struct {
-	Phone  string `json:"phone" binding:"required,min=11,max=11"`
-	Email  string `json:"email" binding:"required,email"`
-	Name   string `json:"name" binding:"required,min=2,max=50"`
-	Avatar string `json:"avatar,omitempty"`
-}
-
 // Login parameters
 type LoginParams struct {
 	Account string `json:"account" binding:"required"`    // Phone or Email
@@ -46,16 +38,71 @@ type ProfileUpdateParams struct {
 	Nickname string `json:"nickname" binding:"required"`
 }
 
-// User status update parameters
-type UserStatusUpdateParams struct {
-	UserId int64 `json:"userId" binding:"required"`
-	Status int   `json:"status" binding:"required,oneof=0 1 2"` // disabled, active, suspended
+// SendVerificationCodeParams 请求下发一次性验证码。
+type SendVerificationCodeParams struct {
+	Channel string `json:"channel" binding:"required,oneof=sms email"`
+	Target  string `json:"target" binding:"required,max=254"`
+	Purpose string `json:"purpose" binding:"required,oneof=login register verify_email verify_phone"`
 }
 
-// Password reset parameters
-type PasswordResetParams struct {
-	Account string `json:"account" binding:"required"`
-	NewCode string `json:"newCode" binding:"required,len=6"`
+// CodeLoginParams 验证码登录；目标不存在且放开自动注册时顺带建号。
+type CodeLoginParams struct {
+	Channel string `json:"channel" binding:"required,oneof=sms email"`
+	Target  string `json:"target" binding:"required,max=254"`
+	Code    string `json:"code" binding:"required,len=6"`
+}
+
+// CodeRegisterParams 用验证码显式注册；目标已被占用时返回 400。
+type CodeRegisterParams struct {
+	Channel string `json:"channel" binding:"required,oneof=sms email"`
+	Target  string `json:"target" binding:"required,max=254"`
+	Code    string `json:"code" binding:"required,len=6"`
+}
+
+// IdentityProviderParams 新增/编辑第三方 OIDC provider。
+// Name 仅在创建时生效（创建后不可改名，因为 auth_identity.provider 存的就是它），
+// ClientSecret 更新时留空表示保持原值。
+type IdentityProviderParams struct {
+	Name         string `json:"name" binding:"max=32"`
+	Label        string `json:"label" binding:"required,min=1,max=50"`
+	Issuer       string `json:"issuer" binding:"required,max=500"`
+	ClientID     string `json:"client_id" binding:"required,max=255"`
+	ClientSecret string `json:"client_secret,omitempty" binding:"max=500"`
+	Scopes       string `json:"scopes,omitempty" binding:"max=255"`
+	AutoRegister *bool  `json:"auto_register,omitempty"`
+	Enabled      *bool  `json:"enabled,omitempty"`
+}
+
+// IdentityProviderRes 是第三方 provider 的管理侧视图。
+// 只回 SecretSet 布尔值，任何情况下都不回显密钥。
+type IdentityProviderRes struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Label        string `json:"label"`
+	Issuer       string `json:"issuer"`
+	ClientID     string `json:"client_id"`
+	SecretSet    bool   `json:"secret_set"`
+	Scopes       string `json:"scopes"`
+	AutoRegister bool   `json:"auto_register"`
+	Enabled      bool   `json:"enabled"`
+	CallbackURL  string `json:"callback_url"`
+	Created      string `json:"created"`
+	Updated      string `json:"updated"`
+}
+
+// PublicIdentityProvider 是登录页渲染按钮所需的最小信息。
+type PublicIdentityProvider struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+}
+
+// IdentityBindingRes 是账号中心展示"已绑定的第三方账号"用的视图。
+type IdentityBindingRes struct {
+	Provider    string `json:"provider"`
+	DisplayName string `json:"display_name,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Avatar      string `json:"avatar,omitempty"`
+	Created     string `json:"created"`
 }
 
 // OAuth2 DTOs
@@ -109,12 +156,14 @@ type OAuth2ClientResponse struct {
 
 // OAuth Client Management DTOs
 type OAuth2ClientCreateParams struct {
+	// ID 留空时由服务端生成随机值；非空时按调用方指定的值登记，便于接入方配置易读的 client_id。
+	ID              string   `json:"id" binding:"omitempty,max=64"`
 	Name            string   `json:"name" binding:"required,min=2,max=100"`
 	RedirectURIs    []string `json:"redirect_uris" binding:"required,min=1"`
 	Scopes          []string `json:"scopes" binding:"required,min=1"`
 	GrantTypes      []string `json:"grant_types" binding:"required,min=1"`
-	AccessTokenTTL  int64    `json:"access_token_ttl" binding:"min=300"`   // min 5 minutes
-	RefreshTokenTTL int64    `json:"refresh_token_ttl" binding:"min=3600"` // min 1 hour
+	AccessTokenTTL  int64    `json:"access_token_ttl" binding:"omitempty,min=300"`   // 留空或 0 用服务端默认 1 小时
+	RefreshTokenTTL int64    `json:"refresh_token_ttl" binding:"omitempty,min=3600"` // 留空或 0 用服务端默认 30 天
 }
 
 type OAuth2ClientUpdateParams struct {
@@ -150,6 +199,46 @@ type OIDCDiscoveryResponse struct {
 	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported"`
 	// ClaimsSupported 声明 userinfo / id_token 可返回的 claims。
 	ClaimsSupported []string `json:"claims_supported"`
+	// EndSessionEndpoint 供 RP 发起登出（OIDC RP-Initiated Logout）。
+	EndSessionEndpoint string `json:"end_session_endpoint"`
+	// RevocationEndpoint 对应 RFC 7009 的 token 撤销端点。
+	RevocationEndpoint string `json:"revocation_endpoint"`
+	// IntrospectionEndpoint 对应 RFC 7662 的 token 内省端点。
+	IntrospectionEndpoint string `json:"introspection_endpoint"`
+	// RevocationEndpointAuthMethodsSupported / IntrospectionEndpointAuthMethodsSupported
+	// 与 token 端点一致：Basic 与 form 两种客户端认证方式都接受。
+	RevocationEndpointAuthMethodsSupported    []string `json:"revocation_endpoint_auth_methods_supported"`
+	IntrospectionEndpointAuthMethodsSupported []string `json:"introspection_endpoint_auth_methods_supported"`
+}
+
+// OAuth2RevokeRequest 是 RFC 7009 的撤销请求参数。
+type OAuth2RevokeRequest struct {
+	Token         string `form:"token" json:"token" binding:"required,min=10,max=500"`
+	TokenTypeHint string `form:"token_type_hint" json:"token_type_hint" binding:"omitempty,oneof=access_token refresh_token"`
+	ClientID      string `form:"client_id" json:"client_id" binding:"omitempty,min=1,max=100"`
+	ClientSecret  string `form:"client_secret" json:"client_secret" binding:"omitempty,min=16,max=128"`
+}
+
+// OAuth2IntrospectRequest 是 RFC 7662 的内省请求参数。
+type OAuth2IntrospectRequest struct {
+	Token         string `form:"token" json:"token" binding:"required,min=10,max=500"`
+	TokenTypeHint string `form:"token_type_hint" json:"token_type_hint" binding:"omitempty,oneof=access_token refresh_token"`
+	ClientID      string `form:"client_id" json:"client_id" binding:"omitempty,min=1,max=100"`
+	ClientSecret  string `form:"client_secret" json:"client_secret" binding:"omitempty,min=16,max=128"`
+}
+
+// OIDCIntrospectResponse 是 RFC 7662 §2.2 定义的响应体。
+// 非活跃 token 只回 {"active": false}，其余字段全部省略。
+type OIDCIntrospectResponse struct {
+	Active    bool   `json:"active"`
+	Scope     string `json:"scope,omitempty"`
+	ClientID  string `json:"client_id,omitempty"`
+	TokenType string `json:"token_type,omitempty"`
+	Exp       int64  `json:"exp,omitempty"`
+	Iat       int64  `json:"iat,omitempty"`
+	Sub       string `json:"sub,omitempty"`
+	Aud       string `json:"aud,omitempty"`
+	Iss       string `json:"iss,omitempty"`
 }
 
 type OIDCAddress struct {
@@ -182,24 +271,6 @@ type OIDCUserInfo struct {
 	PhoneVerified     bool         `json:"phone_number_verified,omitempty"`
 	Address           *OIDCAddress `json:"address,omitempty"`
 	UpdatedAt         int64        `json:"updated_at,omitempty"`
-}
-
-// OIDCIDToken 描述 ID Token 中常见 claim 的字段集合。
-// 实际签发由 OIDCService.GenerateIDToken 直接基于 map 编码（按 scope 选字段），
-// 这里仅供文档/解析方使用，标准字段名遵循 OIDC Core 1.0 §2、§5.4。
-type OIDCIDToken struct {
-	Iss                 string `json:"iss"`
-	Sub                 string `json:"sub"`
-	Aud                 string `json:"aud"`
-	Exp                 int64  `json:"exp"`
-	Iat                 int64  `json:"iat"`
-	Nonce               string `json:"nonce,omitempty"`
-	Name                string `json:"name,omitempty"`
-	PreferredUsername   string `json:"preferred_username,omitempty"`
-	Email               string `json:"email,omitempty"`
-	EmailVerified       bool   `json:"email_verified,omitempty"`
-	PhoneNumber         string `json:"phone_number,omitempty"`
-	PhoneNumberVerified bool   `json:"phone_number_verified,omitempty"`
 }
 
 type OIDCJwksResponse struct {

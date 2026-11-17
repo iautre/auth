@@ -51,6 +51,10 @@ type Module struct {
 // Auth migrations are registered automatically; database/Redis connections and process lifecycle
 // remain the host application's responsibility.
 func MountAPI(router *gin.Engine, options APIOptions) *Module {
+	// 过期数据清理：仅依赖 gowk.DB，未连接数据库时 runCleanup 自带跳过逻辑，
+	// 因此可以安全地在任何挂载路径下启动。重复挂载由 internal 的 once 保护。
+	service.StartCleanup()
+
 	migrations.Register()
 
 	group := router.Group(normalizePath(options.Prefix))
@@ -86,6 +90,23 @@ func MountOAuth(router *gin.Engine, options OAuthOptions) *Module {
 	// produce surprising paths and make issuer/discovery semantics ambiguous.
 	group := router.Group("")
 	route.OAuth(group, validateLoginURL(options.LoginURL))
+	return &Module{
+		Group:      group,
+		CheckLogin: gowk.CheckLogin,
+		UserAuth:   userAuth,
+		CheckAdmin: handler.AdminMiddleware,
+	}
+}
+
+// MountFederated enables third-party OIDC login: auth acts as a relying party
+// and accepts sign-ins from providers configured in the admin page.
+// Paths live at the root (/federated/...) because callback URLs must be
+// registered with each provider and cannot follow the host's API prefix.
+func MountFederated(router *gin.Engine, options OAuthOptions) *Module {
+	migrations.Register()
+	group := router.Group("")
+	route.Federated(group, validateLoginURL(options.LoginURL))
+	service.WarmFederatedProviders()
 	return &Module{
 		Group:      group,
 		CheckLogin: gowk.CheckLogin,

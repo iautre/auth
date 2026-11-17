@@ -38,7 +38,7 @@ func (u *UserHandler) Logout(ctx *gin.Context) {
 			slog.WarnContext(ctx, "revoke browser session skipped because Redis is not ready")
 		}
 	}
-	ctx.SetCookie("oidc_jwt", "", -1, "/", "", true, true)
+	ctx.SetCookie("oidc_jwt", "", -1, "/", "", gowk.CookieSecure(), true)
 	gowk.Response(ctx, http.StatusOK, map[string]string{"message": "logged out"}, nil)
 }
 

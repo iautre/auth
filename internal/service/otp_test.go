@@ -11,16 +11,17 @@ import (
 
 func TestAuthenticationMethodMustRemain(t *testing.T) {
 	for _, test := range []struct {
-		otp, passkey int64
-		want         bool
+		otp, passkey, identity int64
+		want                   bool
 	}{
-		{otp: 0, passkey: 0, want: false},
-		{otp: 1, passkey: 0, want: true},
-		{otp: 0, passkey: 1, want: true},
-		{otp: 2, passkey: 3, want: true},
+		{otp: 0, passkey: 0, identity: 0, want: false},
+		{otp: 1, passkey: 0, identity: 0, want: true},
+		{otp: 0, passkey: 1, identity: 0, want: true},
+		{otp: 0, passkey: 0, identity: 1, want: true},
+		{otp: 2, passkey: 3, identity: 0, want: true},
 	} {
-		if got := authenticationMethodRemains(test.otp, test.passkey); got != test.want {
-			t.Fatalf("authenticationMethodRemains(%d, %d) = %t, want %t", test.otp, test.passkey, got, test.want)
+		if got := authenticationMethodRemains(test.otp, test.passkey, test.identity); got != test.want {
+			t.Fatalf("authenticationMethodRemains(%d, %d, %d) = %t, want %t", test.otp, test.passkey, test.identity, got, test.want)
 		}
 	}
 }

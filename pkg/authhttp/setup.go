@@ -3,6 +3,7 @@ package authhttp
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/iautre/auth/internal/handler"
+	"github.com/iautre/auth/internal/service"
 )
 
 // SetupOptions 描述一次完整的 Auth 挂载。
@@ -13,6 +14,9 @@ type SetupOptions struct {
 	MCPPath string
 	// OAuth 为真时同时挂载 OAuth2/OIDC 协议端点（固定根路径）。
 	OAuth bool
+	// Federated 为真时挂载第三方 OIDC 登录端点（固定根路径 /federated/...），
+	// 让终端用户可以用 Google/GitLab/Keycloak 等外部账号登录。
+	Federated bool
 	// LoginURL 是 OAuth 无会话时浏览器跳转的登录页，必须是同源相对路径。
 	// 留空且 Pages 为真时推导为 {APIPrefix}/login；Pages 也为假则不做跳转，直接返回 401。
 	LoginURL string
@@ -23,6 +27,12 @@ type SetupOptions struct {
 // Setup 一次性挂载 Auth：业务 API 始终挂载，协议端点与内置页面按开关决定。
 // 返回的 Module 提供中间件，供宿主在自己的业务路由上复用。
 func Setup(router *gin.Engine, options SetupOptions) *Module {
+	// 显式配置 OAUTH2_TOKEN_CACHE=redis 时校验缓存后端可达，不可达则终止启动：
+	// 静默退化成无缓存会让"配了 Redis"这个判断失真。
+	if err := service.InitTokenCache(); err != nil {
+		panic("authhttp: " + err.Error())
+	}
+
 	module := MountAPI(router, APIOptions{
 		Prefix:  options.APIPrefix,
 		MCPPath: options.MCPPath,
@@ -38,9 +48,19 @@ func Setup(router *gin.Engine, options SetupOptions) *Module {
 		MountOAuth(router, OAuthOptions{LoginURL: loginURL})
 	}
 
+	if options.Federated {
+		MountFederated(router, OAuthOptions{LoginURL: loginURL})
+	}
+
 	if options.Pages {
 		module.Group.GET("/login", handler.OIDCLoginPageFor("/oauth2/authorize"))
 		module.Group.GET("/account", handler.OAuth2BrowserLogin(loginURL), handler.AccountPage)
+		// 管理中心只对管理员开放：先查登录态，再查权限，最后渲染页面。
+		module.Group.GET("/admin/providers",
+			module.CheckLogin,
+			module.CheckAdmin,
+			handler.IdentityProviderPage,
+		)
 	}
 
 	return module

@@ -35,7 +35,7 @@ func (o *OTP) GetCode(secret string, offset int64) string {
 	return fmt.Sprintf("%06d", o.OneTimePassword(key, o.ToBytes(epochSeconds/30)))
 }
 
-// 获取密码
+// 获取密钥
 func (o *OTP) OneTimePassword(key []byte, value []byte) uint32 {
 	hmacSha1 := hmac.New(sha1.New, key)
 	hmacSha1.Write(value)

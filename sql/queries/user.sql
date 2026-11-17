@@ -8,6 +8,11 @@ SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, last
 FROM public.auth_user
 WHERE phone = $1;
 
+-- name: UserByEmail :one
+SELECT id, phone, email, nickname, "group", enabled, created, updated, aid, last_login_at, login_count, avatar, is_verified
+FROM public.auth_user
+WHERE lower(email) = lower($1);
+
 -- name: UpdateUserLoginInfo :exec
 UPDATE public.auth_user
 SET last_login_at = NOW(),
@@ -22,6 +27,11 @@ SET phone = $2,
     nickname = $4,
     updated = NOW()
 WHERE id = $1;
+
+-- name: CreateUser :one
+INSERT INTO public.auth_user (phone, email, nickname, "group", enabled, is_verified)
+VALUES ($1, $2, $3, $4, true, $5)
+RETURNING id, phone, email, nickname, "group", enabled, created, updated, aid, last_login_at, login_count, avatar, is_verified;
 
 -- name: LockUserForCredentialChange :one
 SELECT id

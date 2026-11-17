@@ -3,11 +3,14 @@ module github.com/iautre/auth
 go 1.27.4
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-webauthn/webauthn v0.18.2
-	github.com/iautre/gowk v0.0.0-20261117030808-da2fc6e31cf7
+	github.com/iautre/gowk v0.0.0-20261117040854-634556cc824c
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/redis/go-redis/v9 v9.23.0
+	golang.org/x/oauth2 v0.38.0
 )
 
 require (
@@ -19,6 +22,7 @@ require (
 	github.com/fxamacker/cbor/v2 v2.10.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.16 // indirect
 	github.com/gin-contrib/sse v1.2.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-playground/locales v0.14.2 // indirect
 	github.com/go-playground/universal-translator v0.18.2 // indirect
 	github.com/go-playground/validator/v10 v10.30.6 // indirect
@@ -44,7 +48,6 @@ require (
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.65.0 // indirect
-	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
@@ -57,7 +60,6 @@ require (
 	golang.org/x/arch v0.33.0 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/oauth2 v0.38.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.44.0 // indirect

@@ -47,7 +47,7 @@
     h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -.025em; }
     .subtitle { margin: 0 0 28px; color: #667085; line-height: 1.55; }
     label { display: block; margin: 18px 0 8px; font-size: 14px; font-weight: 650; }
-    input {
+    input, select {
       width: 100%;
       height: 48px;
       padding: 0 14px;
@@ -59,7 +59,7 @@
       font: inherit;
       transition: border-color .15s, box-shadow .15s;
     }
-    input:focus { border-color: #5674f4; box-shadow: 0 0 0 4px rgba(86, 116, 244, .13); }
+    input:focus, select:focus { border-color: #5674f4; box-shadow: 0 0 0 4px rgba(86, 116, 244, .13); }
     button {
       width: 100%;
       height: 48px;
@@ -117,6 +117,39 @@
     .account-link { margin: 16px 0 0; text-align: center; font-size: 14px; }
     .account-link a { color: #315efb; text-decoration: none; }
     .account-link a:hover { text-decoration: underline; }
+    .tabs { display: flex; gap: 4px; padding: 4px; margin: 0 0 4px; border-radius: 12px; background: #f2f4f7; }
+    .tab {
+      flex: 1;
+      height: 38px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: #667085;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 650;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .tab.active { background: #fff; color: #18212f; box-shadow: 0 1px 3px rgba(16, 24, 40, .12); }
+    .send-row { display: flex; gap: 8px; align-items: flex-end; }
+    .send-row > div { flex: 1; }
+    .send-row button { width: auto; height: 48px; padding: 0 14px; margin: 0; white-space: nowrap; font-size: 13px; }
+    .federated { display: grid; gap: 10px; margin-top: 18px; }
+    .federated button {
+      width: 100%;
+      height: 46px;
+      border: 1px solid #d8dee8;
+      border-radius: 11px;
+      background: #fff;
+      color: inherit;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .federated button:hover { border-color: #b9c2d0; }
+    .register-link { margin: 16px 0 0; text-align: center; font-size: 14px; }
     @media (prefers-color-scheme: dark) {
       :root { background: #0e1118; color: #f2f4f7; }
       body { background: radial-gradient(circle at 20% 10%, rgba(74, 99, 227, .25), transparent 34%), #0e1118; }
@@ -127,6 +160,11 @@
       .divider::before, .divider::after { background: #353d4c; }
       #error.info { color: #98a2b3; }
       dialog { background: #151a24; }
+      .tabs { background: #111722; }
+      .tab { color: #98a2b3; }
+      .tab.active { background: #232a36; color: #f2f4f7; box-shadow: none; }
+      .federated button { background: #111722; border-color: #353d4c; }
+      .federated button:hover { border-color: #4a5364; }
     }
     @media (max-width: 480px) {
       body { padding: 14px; }
@@ -146,16 +184,45 @@
         data-passkey-login-begin-path="{{.PasskeyLoginBeginPath}}"
         data-passkey-login-finish-path="{{.PasskeyLoginFinishPath}}"
 		data-return-to="{{.ReturnTo}}"
+        data-code-login-path="{{.CodeLoginPath}}"
+        data-verification-path="{{.VerificationSendPath}}"
+        data-federated-providers-path="{{.FederatedProvidersPath}}"
+        data-federated-base-path="{{.FederatedBasePath}}"
+        data-code-enabled="{{.CodeEnabled}}"
         data-passkey-enabled="{{.PasskeyEnabled}}">
     <div class="brand" aria-hidden="true">A</div>
     <h1>登录 Auth</h1>
     <p class="subtitle">验证身份后继续授权当前应用。</p>
+
+    <div class="tabs" id="login-tabs" hidden>
+      <button class="tab" type="button" data-tab="code">动态验证码</button>
+      <button class="tab" type="button" data-tab="sms">邮箱 / 短信验证码</button>
+    </div>
+
     <form id="login-form">
       <label for="account">手机号</label>
       <input id="account" name="account" type="tel" autocomplete="username" inputmode="tel" required autofocus>
       <label for="code">动态验证码</label>
       <input id="code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required>
       <button id="submit" type="submit">登录并继续</button>
+    </form>
+
+    <form id="sms-form" hidden>
+      <label for="sms-channel">接收方式</label>
+      <select id="sms-channel" name="channel">
+        <option value="sms">短信（手机号）</option>
+        <option value="email">邮件（邮箱）</option>
+      </select>
+      <label for="sms-target" id="sms-target-label">手机号</label>
+      <div class="send-row">
+        <div>
+          <input id="sms-target" name="target" type="text" inputmode="tel" autocomplete="tel" required>
+        </div>
+        <button id="sms-send" class="secondary" type="button">获取验证码</button>
+      </div>
+      <label for="sms-code">验证码</label>
+      <input id="sms-code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required>
+      <button id="sms-submit" type="submit">登录并继续</button>
     </form>
     <div id="passkey-entry"{{if not .PasskeyEnabled}} hidden{{end}}>
       <div class="divider">或</div>
@@ -168,6 +235,8 @@
       <button id="passkey-skip" class="secondary" type="button">暂时跳过</button>
     </section>
     <p id="error" role="alert" aria-live="polite"></p>
+    <div class="federated" id="federated" hidden></div>
+    <p class="register-link">还没有账号？输入邮箱或手机号收码即可自动创建。</p>
     {{if .ShowAccountLink}}<p class="account-link"><a href="{{.AccountPath}}">个人中心 / 管理通行密钥</a></p>{{end}}
   </main>
   <dialog id="passkey-name-dialog" aria-labelledby="passkey-name-title">
@@ -205,6 +274,150 @@
     let passkeyNameResolve = null;
 
     if (!passkeySupported || !passkeyEnabled) passkeyEntry.hidden = true;
+
+    // ---- 一次性验证码 / 第三方登录 ----
+    const smsForm = document.getElementById('sms-form');
+    const tabsEl = document.getElementById('login-tabs');
+    const tabs = tabsEl ? Array.from(tabsEl.querySelectorAll('.tab')) : [];
+    const federatedEl = document.getElementById('federated');
+    const codeEnabled = container.dataset.codeEnabled === 'true';
+
+    const loginForms = { code: form, sms: smsForm };
+
+    function hideLoginForms() {
+      Object.values(loginForms).forEach(el => { if (el) el.hidden = true; });
+      if (tabsEl) tabsEl.hidden = true;
+    }
+
+    function showTab(name) {
+      Object.entries(loginForms).forEach(([key, el]) => {
+        if (el) el.hidden = key !== name;
+      });
+      tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === name));
+      setLoginMessage('', false);
+    }
+
+    if (codeEnabled && tabsEl) {
+      tabsEl.hidden = false;
+      showTab('code');
+      tabs.forEach(tab => tab.addEventListener('click', () => showTab(tab.dataset.tab)));
+    }
+
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[ch]));
+    }
+
+    if (smsForm) {
+      const smsChannel = document.getElementById('sms-channel');
+      const smsTarget = document.getElementById('sms-target');
+      const smsSend = document.getElementById('sms-send');
+      const smsTargetLabel = document.getElementById('sms-target-label');
+      const smsSubmit = document.getElementById('sms-submit');
+      let countdownTimer = null;
+
+      function syncChannel() {
+        const isSms = smsChannel.value === 'sms';
+        smsTarget.type = isSms ? 'tel' : 'email';
+        smsTarget.inputMode = isSms ? 'tel' : 'email';
+        smsTarget.autocomplete = isSms ? 'tel' : 'email';
+        smsTarget.placeholder = isSms ? '请输入手机号' : '请输入邮箱';
+        smsTargetLabel.textContent = isSms ? '手机号' : '邮箱';
+      }
+      smsChannel.addEventListener('change', syncChannel);
+      syncChannel();
+
+      function startCountdown() {
+        let remaining = 60;
+        smsSend.disabled = true;
+        smsSend.textContent = `${remaining}s`;
+        countdownTimer = window.setInterval(() => {
+          remaining -= 1;
+          if (remaining <= 0) {
+            window.clearInterval(countdownTimer);
+            countdownTimer = null;
+            smsSend.disabled = false;
+            smsSend.textContent = '获取验证码';
+            return;
+          }
+          smsSend.textContent = `${remaining}s`;
+        }, 1000);
+      }
+
+      smsSend.addEventListener('click', async () => {
+        const value = smsTarget.value.trim();
+        if (!value) {
+          setLoginMessage('请先填写手机号或邮箱');
+          return;
+        }
+        smsSend.disabled = true;
+        try {
+          await requestJSON(container.dataset.verificationPath, {
+            method: 'POST',
+            body: JSON.stringify({ channel: smsChannel.value, target: value, purpose: 'login' })
+          });
+          setLoginMessage('验证码已发送，请查收', false);
+          startCountdown();
+        } catch (error) {
+          setLoginMessage(error instanceof Error ? error.message : '发送失败，请重试');
+          smsSend.disabled = false;
+        }
+      });
+
+      smsForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        smsSubmit.disabled = true;
+        smsSubmit.textContent = '正在登录…';
+        setLoginMessage('', false);
+        try {
+          await requestJSON(container.dataset.codeLoginPath, {
+            method: 'POST',
+            body: JSON.stringify({
+              channel: smsChannel.value,
+              target: smsTarget.value.trim(),
+              code: smsForm.elements.code.value.trim()
+            })
+          });
+          if (!passkeyEnabled) {
+            redirectToApplication();
+            return;
+          }
+          await offerPasskeyEnrollment();
+        } catch (error) {
+          setLoginMessage(error instanceof Error ? error.message : '登录失败，请重试');
+          smsSubmit.disabled = false;
+          smsSubmit.textContent = '登录并继续';
+        }
+      });
+    }
+
+    if (federatedEl) {
+      (async function loadFederatedProviders() {
+        const base = container.dataset.federatedBasePath;
+        if (!base) return;
+        try {
+          const providers = await requestJSON(container.dataset.federatedProvidersPath, { method: 'GET' });
+          if (!Array.isArray(providers) || providers.length === 0) return;
+          const federatedReturnTo = container.dataset.returnTo;
+          federatedEl.innerHTML = providers.map(provider => {
+            const url = `${base}/${encodeURIComponent(provider.name)}/login?return_to=${encodeURIComponent(federatedReturnTo)}`;
+            return `<button type="button" data-url="${escapeHTML(url)}">使用 ${escapeHTML(provider.label)} 登录</button>`;
+          }).join('');
+          federatedEl.hidden = false;
+        } catch {
+          // 第三方登录不可用时静默降级，不阻塞其他登录方式
+        }
+      })();
+
+      federatedEl.addEventListener('click', event => {
+        const url = event.target?.dataset?.url;
+        if (url) window.location.href = url;
+      });
+    }
+
+    const queryError = new URLSearchParams(window.location.search).get('error');
+    if (queryError) setLoginMessage(queryError);
 
     function redirectToApplication() {
       window.location.replace(container.dataset.returnTo);
@@ -441,6 +654,7 @@
           return;
         }
         form.hidden = true;
+        hideLoginForms();
         passkeyEntry.hidden = true;
         enrollment.hidden = false;
         setLoginMessage('', false);
@@ -455,6 +669,7 @@
         const status = await requestJSON(container.dataset.passkeyStatusPath, { method: 'GET' });
         if (!status?.has_passkey) {
           form.hidden = true;
+          hideLoginForms();
           passkeyEntry.hidden = true;
           enrollment.hidden = false;
         }

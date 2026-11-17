@@ -22,6 +22,10 @@ var browserPageTemplate = template.Must(template.ParseFS(browserPageFS, "templat
 
 type loginPageData struct {
 	LoginPath                 string
+	VerificationSendPath      string
+	CodeLoginPath             string
+	FederatedProvidersPath    string
+	FederatedBasePath         string
 	PasskeyStatusPath         string
 	PasskeyCredentialsPath    string
 	PasskeyRegisterBeginPath  string
@@ -31,6 +35,7 @@ type loginPageData struct {
 	AccountPath               string
 	ReturnTo                  string
 	PasskeyEnabled            bool
+	CodeEnabled               bool
 	ShowAccountLink           bool
 }
 
@@ -39,6 +44,7 @@ type accountPageData struct {
 	UserInfoPath              string
 	ProfilePath               string
 	LogoutPath                string
+	IdentitiesPath            string
 	OTPCredentialsPath        string
 	OTPEnrollmentBeginPath    string
 	OTPEnrollmentFinishPath   string
@@ -55,7 +61,12 @@ const defaultAuthorizationPath = "/oauth2/authorize"
 type BrowserLoginPageOptions struct {
 	AuthorizationPaths []string
 	EnablePasskey      bool
-	ShowAccountLink    bool
+	// EnableCode 控制页面上是否出现"邮箱 / 手机验证码"入口。
+	// 只有通行密钥时页面只剩 passkey 一种方式。
+	EnableCode bool
+	// FederatedBasePath 为空表示不显示第三方登录按钮。
+	FederatedBasePath string
+	ShowAccountLink   bool
 }
 
 // BrowserLoginPage renders Auth's standalone browser login page.
@@ -85,6 +96,10 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 		showAccountLink := options.ShowAccountLink && browserSessionUserID(ctx) > 0
 		if err := browserPageTemplate.ExecuteTemplate(ctx.Writer, "login.html", loginPageData{
 			LoginPath:                 loginPath,
+			VerificationSendPath:      basePath + "/verification/send",
+			CodeLoginPath:             basePath + "/login/code",
+			FederatedProvidersPath:    options.FederatedBasePath + "/providers",
+			FederatedBasePath:         options.FederatedBasePath,
 			PasskeyStatusPath:         passkeyPath + "/status",
 			PasskeyCredentialsPath:    passkeyPath + "/credentials",
 			PasskeyRegisterBeginPath:  passkeyPath + "/register/begin",
@@ -94,6 +109,7 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 			AccountPath:               accountPath,
 			ReturnTo:                  returnTo,
 			PasskeyEnabled:            options.EnablePasskey,
+			CodeEnabled:               options.EnableCode,
 			ShowAccountLink:           showAccountLink,
 		}); err != nil {
 			ctx.Error(err)
@@ -107,6 +123,8 @@ func OIDCLoginPageFor(authorizationPaths ...string) gin.HandlerFunc {
 	return BrowserLoginPage(BrowserLoginPageOptions{
 		AuthorizationPaths: authorizationPaths,
 		EnablePasskey:      true,
+		EnableCode:         true,
+		FederatedBasePath:  "/federated",
 		ShowAccountLink:    true,
 	})
 }
@@ -115,13 +133,13 @@ func AccountPage(ctx *gin.Context) {
 	accountPath := ctx.Request.URL.Path
 	basePath := strings.TrimSuffix(accountPath, "/account")
 	passkeyPath := basePath + "/passkey"
-
 	setBrowserPageHeaders(ctx)
 	if err := browserPageTemplate.ExecuteTemplate(ctx.Writer, "account.html", accountPageData{
 		LoginPath:                 basePath + "/login",
 		UserInfoPath:              basePath + "/user/info",
 		ProfilePath:               basePath + "/user/profile",
 		LogoutPath:                basePath + "/logout",
+		IdentitiesPath:            basePath + "/identities",
 		OTPCredentialsPath:        basePath + "/otp/credentials",
 		OTPEnrollmentBeginPath:    basePath + "/otp/enrollment/begin",
 		OTPEnrollmentFinishPath:   basePath + "/otp/enrollment/finish",

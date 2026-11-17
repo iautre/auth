@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -57,7 +58,6 @@ func (u *UserService) GetByPhone(ctx context.Context, phone string) (db2.AuthUse
 
 // Login 登录
 func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.AuthUser, error) {
-	// Get user by phone (for now, only phone is supported)
 	user, err := u.GetByPhone(ctx, params.Account)
 	if err != nil {
 		return db2.AuthUser{}, gowk.NewError("user not found")
@@ -83,28 +83,6 @@ func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.A
 	}
 
 	return user, nil
-}
-
-// GetByAccount retrieves user by phone or email (simplified version)
-func (u *UserService) GetByAccount(ctx context.Context, account string) (db2.AuthUser, error) {
-	if account == "" {
-		return db2.AuthUser{}, gowk.NewError("account cannot be empty")
-	}
-
-	// For now, just use phone lookup
-	// Email support would require database query updates
-	return u.GetByPhone(ctx, account)
-}
-
-// GetByEmail retrieves user by email
-func (u *UserService) GetByEmail(ctx context.Context, email string) (db2.AuthUser, error) {
-	if email == "" {
-		return db2.AuthUser{}, gowk.NewError("email cannot be empty")
-	}
-
-	// For now, return empty user as placeholder
-	// This would require database query implementation with proper email field
-	return db2.AuthUser{}, gowk.NewError("email login not yet implemented")
 }
 
 // ResetOTPCode 重新生成用户 OTP 秘钥并写库，返回新秘钥。
@@ -146,10 +124,10 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 			codeChallengeMethod = "plain"
 		}
 		if codeChallengeMethod != "S256" && codeChallengeMethod != "plain" {
-			return "", gowk.NewError("unsupported code_challenge_method")
+			return "", invalidRequest("unsupported code_challenge_method")
 		}
 	} else if codeChallengeMethod != "" {
-		return "", gowk.NewError("code_challenge_method requires code_challenge")
+		return "", invalidRequest("code_challenge_method requires code_challenge")
 	}
 
 	code := gowk.GenerateRandomString(32)
@@ -175,34 +153,80 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 	return code, nil
 }
 
-func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.OAuth2AuthRequest) (*db2.AuthOauth2Client, error) {
-	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, req.ClientID)
+// AuthorizedClient 是 authorize 第一阶段校验通过后的客户端快照。
+// 拆成两步是为了让调用方能区分"client 本身不可信"（不得重定向）与
+// "后续参数有误"（可以带 error 回到 redirect_uri），见 RFC 6749 §4.1.2.1。
+type AuthorizedClient struct {
+	ID     string
+	Secret string
+	Scopes string
+}
+
+// ValidateClientRedirect 只判断"能否把用户送回这个客户端"：client 存在、启用、
+// redirect_uri 与登记值精确相等。这一步失败时按 RFC 6749 §4.1.2.1 不得重定向，
+// 必须就地报错，避免把用户导向未登记地址。
+func (o *OAuth2Service) ValidateClientRedirect(ctx context.Context, clientID, redirectURI string) (*AuthorizedClient, error) {
+	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
 	if err != nil {
-		return nil, gowk.NewError("invalid client_id")
+		return nil, invalidRequest("unknown client_id")
 	}
 	if !client.Enabled {
-		return nil, gowk.NewError("client is disabled")
-	}
-	if err := validatePublicClientPKCE(client.Secret, req.CodeChallenge, req.CodeChallengeMethod); err != nil {
-		return nil, err
+		return nil, invalidRequest("client is disabled")
 	}
 
 	var redirectURIs []string
 	if err := json.Unmarshal([]byte(client.RedirectUris), &redirectURIs); err != nil {
-		return nil, gowk.NewError("invalid client configuration")
+		return nil, invalidRequest("client redirect_uris is malformed")
 	}
-
-	validRedirectURI := false
 	for _, uri := range redirectURIs {
-		if uri == req.RedirectURI {
-			validRedirectURI = true
-			break
+		if uri == redirectURI {
+			return &AuthorizedClient{ID: client.ID, Secret: client.Secret, Scopes: client.Scopes}, nil
 		}
 	}
-	if !validRedirectURI {
-		return nil, gowk.NewError("invalid redirect_uri")
+	return nil, invalidRequest("redirect_uri does not match any registered value")
+}
+
+// validateAuthScopes 校验请求的 scope 全部落在 client 登记的范围内。
+// 登记列表为空视为未限制（保持历史 client 可用）；非空则严格限制，
+// 防止客户端索取未获授权的用户字段（如未登记 phone 却要求手机号）。
+func validateAuthScopes(clientScopesJSON, requested string) error {
+	var allowed []string
+	if err := json.Unmarshal([]byte(clientScopesJSON), &allowed); err != nil {
+		return invalidRequest("client scopes is malformed")
 	}
-	return &client, nil
+	if len(allowed) == 0 {
+		return nil
+	}
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, s := range allowed {
+		allowedSet[s] = struct{}{}
+	}
+	for _, s := range strings.Fields(requested) {
+		if _, ok := allowedSet[s]; !ok {
+			return invalidScope("scope not registered for this client: " + s)
+		}
+	}
+	return nil
+}
+
+// ValidateAuthRequest 在 client 已确认可信之后校验 scope 与 PKCE。
+func (o *OAuth2Service) ValidateAuthRequest(client *AuthorizedClient, req *dto.OAuth2AuthRequest) error {
+	if err := validateAuthScopes(client.Scopes, req.Scope); err != nil {
+		return err
+	}
+	return validatePublicClientPKCE(client.Secret, req.CodeChallenge, req.CodeChallengeMethod)
+}
+
+// ValidateOAuth2AuthRequest 一次性完成 authorize 的全部校验。
+func (o *OAuth2Service) ValidateOAuth2AuthRequest(ctx context.Context, req *dto.OAuth2AuthRequest) (*AuthorizedClient, error) {
+	client, err := o.ValidateClientRedirect(ctx, req.ClientID, req.RedirectURI)
+	if err != nil {
+		return nil, err
+	}
+	if err := o.ValidateAuthRequest(client, req); err != nil {
+		return nil, err
+	}
+	return client, nil
 }
 
 // ValidateAuthorizationCode 取出并校验授权码。
@@ -213,21 +237,21 @@ func (o *OAuth2Service) ValidateAuthorizationCode(ctx context.Context, code, cli
 
 	authCode, err := queries.GetOAuth2AuthorizationCode(ctx, code)
 	if err != nil {
-		return nil, gowk.NewError("authorization code not found")
+		return nil, invalidGrant("authorization code not found")
 	}
 
 	if authCode.ClientID != clientID {
-		return nil, gowk.NewError("client ID mismatch")
+		return nil, invalidGrant("client ID mismatch")
 	}
 
 	if authCode.Expires.Time.Before(time.Now()) {
-		return nil, gowk.NewError("authorization code expired")
+		return nil, invalidGrant("authorization code expired")
 	}
 
 	// redirect_uri 必须与授权阶段一致；允许未绑定时跳过比对（罕见场景，保守兼容）。
 	if authCode.RedirectUri.Valid && authCode.RedirectUri.String != "" {
 		if redirectURI == "" || authCode.RedirectUri.String != redirectURI {
-			return nil, gowk.NewError("redirect_uri mismatch")
+			return nil, invalidGrant("redirect_uri mismatch")
 		}
 	}
 
@@ -242,33 +266,19 @@ func (o *OAuth2Service) ConsumeAuthorizationCode(ctx context.Context, code, clie
 		ClientID: clientID,
 	})
 	if err != nil {
-		return nil, gowk.NewError("authorization code already used or expired")
+		return nil, invalidGrant("authorization code already used or expired")
 	}
 	return &authCode, nil
 }
 
-// 默认 TTL：仅在 client 配置缺失时兜底。
-const (
-	defaultAccessTokenTTL  = int64(3600)           // 1h
-	defaultRefreshTokenTTL = int64(30 * 24 * 3600) // 30d
-)
-
-func DefaultAccessTokenTTL() int64 { return defaultAccessTokenTTL }
-
-// resolveTokenTTL 拿到 client 的 TTL；client 不存在时回退到默认值。
-func (o *OAuth2Service) resolveTokenTTL(ctx context.Context, clientID string) (accessTTL, refreshTTL int64) {
+// resolveTokenTTL 读取 client 配置的 TTL。列定义是 NOT NULL DEFAULT，
+// 创建与更新两侧都不会写入 0 或负数，因此这里不做兜底：读不到就返回错误。
+func (o *OAuth2Service) resolveTokenTTL(ctx context.Context, clientID string) (int64, int64, error) {
 	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
-	if err != nil || client.AccessTokenTtl <= 0 {
-		accessTTL = defaultAccessTokenTTL
-	} else {
-		accessTTL = client.AccessTokenTtl
+	if err != nil {
+		return 0, 0, fmt.Errorf("读取 client %s 的 token TTL 失败: %w", clientID, err)
 	}
-	if err != nil || client.RefreshTokenTtl <= 0 {
-		refreshTTL = defaultRefreshTokenTTL
-	} else {
-		refreshTTL = client.RefreshTokenTtl
-	}
-	return
+	return client.AccessTokenTtl, client.RefreshTokenTtl, nil
 }
 
 // generateAccessToken 生成并落库一枚 access token，返回 token 字符串。
@@ -316,7 +326,7 @@ func (o *OAuth2Service) buildTokenResponse(ctx context.Context, accessToken, ref
 
 	// Generate ID Token if OIDC scope is requested
 	if includeIDToken && strings.Contains(scope.String, "openid") {
-		idToken, err := DefaultOIDCService().GenerateIDToken(ctx, userID, clientID, nonce, scope.String, accessTTL)
+		idToken, err := DefaultOIDCService().GenerateIDToken(ctx, userID, clientID, nonce, scope.String, accessToken, accessTTL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ID token: %w", err)
 		}
@@ -336,7 +346,7 @@ func (o *OAuth2Service) ExchangeToken(ctx context.Context, req *dto.OAuth2TokenR
 	case "client_credentials":
 		return o.handleClientCredentialsGrant(ctx, req)
 	default:
-		return nil, gowk.NewError("unsupported grant_type: " + req.GrantType)
+		return nil, newOAuthError(OAuthErrUnsupportedGrantType, "unsupported grant_type: "+req.GrantType, http.StatusBadRequest)
 	}
 }
 
@@ -347,7 +357,7 @@ func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *d
 		return nil, err
 	}
 	if !o.supportsGrantType(client.GrantTypes, "authorization_code") {
-		return nil, gowk.NewError("client does not support authorization_code grant")
+		return nil, newOAuthError(OAuthErrUnauthorizedClient, "client does not support authorization_code grant", http.StatusBadRequest)
 	}
 	authCode, err := o.ValidateAuthorizationCode(ctx, req.Code, req.ClientID, req.RedirectURI)
 	if err != nil {
@@ -371,7 +381,10 @@ func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *d
 	if err != nil {
 		return nil, err
 	}
-	accessTTL, refreshTTL := o.resolveTokenTTL(ctx, req.ClientID)
+	accessTTL, refreshTTL, err := o.resolveTokenTTL(ctx, req.ClientID)
+	if err != nil {
+		return nil, err
+	}
 	accessToken, err := o.generateAccessToken(ctx, authCode.ClientID, authCode.UserID, authCode.Scope, accessTTL)
 	if err != nil {
 		return nil, err
@@ -388,7 +401,7 @@ func (o *OAuth2Service) handleAuthorizationCodeGrant(ctx context.Context, req *d
 // PKCE, but public clients must use S256 rather than plain or no challenge.
 func validatePublicClientPKCE(clientSecret, codeChallenge, codeChallengeMethod string) error {
 	if clientSecret == "" && (codeChallenge == "" || codeChallengeMethod != "S256") {
-		return gowk.NewError("public client requires PKCE S256")
+		return invalidRequest("public client requires PKCE S256")
 	}
 	return nil
 }
@@ -399,23 +412,26 @@ func (o *OAuth2Service) handleRefreshTokenGrant(ctx context.Context, req *dto.OA
 	queries := o.getQueries(ctx)
 	token, err := queries.GetOAuth2RefreshToken(ctx, req.RefreshToken)
 	if err != nil {
-		return nil, gowk.NewError("invalid or expired refresh token")
+		return nil, invalidGrant("invalid or expired refresh token")
 	}
 	if time.Now().After(token.Expires.Time) {
-		return nil, gowk.NewError("refresh token expired")
+		return nil, invalidGrant("refresh token expired")
 	}
 	// refresh 流程也必须验证 client。req.ClientID 若提供则需与 token 匹配，避免跨 client 串用。
 	if req.ClientID != "" && req.ClientID != token.ClientID {
-		return nil, gowk.NewError("client_id does not match refresh token")
+		return nil, invalidGrant("client_id does not match refresh token")
 	}
 	client, err := o.authenticateClient(ctx, token.ClientID, req.ClientSecret)
 	if err != nil {
 		return nil, err
 	}
 	if !o.supportsGrantType(client.GrantTypes, "refresh_token") {
-		return nil, gowk.NewError("client does not support refresh_token grant")
+		return nil, newOAuthError(OAuthErrUnauthorizedClient, "client does not support refresh_token grant", http.StatusBadRequest)
 	}
-	accessTTL, refreshTTL := o.resolveTokenTTL(ctx, token.ClientID)
+	accessTTL, refreshTTL, err := o.resolveTokenTTL(ctx, token.ClientID)
+	if err != nil {
+		return nil, err
+	}
 	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, accessTTL)
 	if err != nil {
 		return nil, err
@@ -436,18 +452,18 @@ func (o *OAuth2Service) handleRefreshTokenGrant(ctx context.Context, req *dto.OA
 // 空 secret 视为 public client，调用方应配合 PKCE 防御。
 func (o *OAuth2Service) authenticateClient(ctx context.Context, clientID, clientSecret string) (*db2.AuthOauth2Client, error) {
 	if clientID == "" {
-		return nil, gowk.NewError("client_id is required")
+		return nil, invalidClient("client_id is required")
 	}
 	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
 	if err != nil {
-		return nil, gowk.NewError("invalid client_id")
+		return nil, invalidClient("unknown client_id")
 	}
 	if !client.Enabled {
-		return nil, gowk.NewError("client is disabled")
+		return nil, invalidClient("client is disabled")
 	}
 	if client.Secret != "" {
 		if subtle.ConstantTimeCompare([]byte(client.Secret), []byte(clientSecret)) != 1 {
-			return nil, gowk.NewError("invalid client credentials")
+			return nil, invalidClient("invalid client credentials")
 		}
 	}
 	return &client, nil
@@ -460,12 +476,12 @@ func (o *OAuth2Service) verifyPKCE(authCode *db2.AuthOauth2AuthorizationCode, co
 	hasChallenge := authCode.CodeChallenge.Valid && authCode.CodeChallenge.String != ""
 	if !hasChallenge {
 		if codeVerifier != "" {
-			return gowk.NewError("code_verifier provided but authorization code was not bound to PKCE")
+			return invalidGrant("code_verifier provided but authorization code was not bound to PKCE")
 		}
 		return nil
 	}
 	if codeVerifier == "" {
-		return gowk.NewError("code_verifier is required")
+		return invalidGrant("code_verifier is required")
 	}
 	method := "plain"
 	if authCode.CodeChallengeMethod.Valid && authCode.CodeChallengeMethod.String != "" {
@@ -479,10 +495,10 @@ func (o *OAuth2Service) verifyPKCE(authCode *db2.AuthOauth2AuthorizationCode, co
 		sum := sha256.Sum256([]byte(codeVerifier))
 		expected = base64.RawURLEncoding.EncodeToString(sum[:])
 	default:
-		return gowk.NewError("unsupported code_challenge_method")
+		return invalidGrant("unsupported code_challenge_method")
 	}
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(authCode.CodeChallenge.String)) != 1 {
-		return gowk.NewError("invalid code_verifier")
+		return invalidGrant("invalid code_verifier")
 	}
 	return nil
 }
@@ -496,9 +512,12 @@ func (o *OAuth2Service) handleClientCredentialsGrant(ctx context.Context, req *d
 		return nil, err
 	}
 	if !o.supportsGrantType(client.GrantTypes, "client_credentials") {
-		return nil, gowk.NewError("client does not support client_credentials grant")
+		return nil, newOAuthError(OAuthErrUnauthorizedClient, "client does not support client_credentials grant", http.StatusBadRequest)
 	}
-	accessTTL, _ := o.resolveTokenTTL(ctx, client.ID)
+	accessTTL, _, err := o.resolveTokenTTL(ctx, client.ID)
+	if err != nil {
+		return nil, err
+	}
 	scope := pgtype.Text{String: req.Scope, Valid: req.Scope != ""}
 	accessToken, err := o.generateAccessToken(ctx, client.ID, 0, scope, accessTTL)
 	if err != nil {
@@ -533,15 +552,18 @@ func (o *OAuth2Service) RefreshToken(ctx context.Context, refreshToken string) (
 	queries := o.getQueries(ctx)
 	token, err := queries.GetOAuth2RefreshToken(ctx, refreshToken)
 	if err != nil {
-		return nil, gowk.NewError("invalid refresh token")
+		return nil, invalidGrant("invalid refresh token")
 	}
 	if token.Expires.Time.Before(time.Now()) {
-		return nil, gowk.NewError("refresh token expired")
+		return nil, invalidGrant("refresh token expired")
 	}
 	if err := o.ensureClientEnabled(ctx, token.ClientID); err != nil {
 		return nil, err
 	}
-	accessTTL, refreshTTL := o.resolveTokenTTL(ctx, token.ClientID)
+	accessTTL, refreshTTL, err := o.resolveTokenTTL(ctx, token.ClientID)
+	if err != nil {
+		return nil, err
+	}
 	accessToken, err := o.generateAccessToken(ctx, token.ClientID, token.UserID, token.Scope, accessTTL)
 	if err != nil {
 		return nil, err
@@ -560,29 +582,36 @@ func (o *OAuth2Service) RefreshToken(ctx context.Context, refreshToken string) (
 func (o *OAuth2Service) ensureClientEnabled(ctx context.Context, clientID string) error {
 	client, err := o.getQueries(ctx).GetOAuth2Client(ctx, clientID)
 	if err != nil {
-		return gowk.NewError("invalid client_id")
+		return invalidClient("unknown client_id")
 	}
 	if !client.Enabled {
-		return gowk.NewError("client is disabled")
+		return invalidClient("client is disabled")
 	}
 	return nil
 }
 
-// ValidateAccessToken validates access token from database
+// ValidateAccessToken 校验 access token 有效性。命中缓存时跳过数据库查询，
+// 但无论是否命中都会确认签发它的 client 仍然启用——否则禁用客户端这个动作
+// 对已经发出的 token 完全无效，要等它自然过期。
 func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken string) (*db2.AuthOauth2Token, error) {
-	// Get token from database
-	queries := o.getQueries(ctx)
-	oauth2Token, err := queries.GetOAuth2Token(ctx, accessToken)
-	if err != nil {
-		return nil, gowk.NewError("invalid or expired access token")
+	token := loadAccessTokenFromCache(ctx, accessToken)
+	if token == nil {
+		oauth2Token, err := o.getQueries(ctx).GetOAuth2Token(ctx, accessToken)
+		if err != nil {
+			return nil, invalidGrant("invalid or expired access token")
+		}
+		if time.Now().After(oauth2Token.Expires.Time) {
+			return nil, invalidGrant("access token expired")
+		}
+		token = &oauth2Token
+		storeAccessTokenToCache(ctx, token)
 	}
 
-	// Check if token is expired
-	if time.Now().After(oauth2Token.Expires.Time) {
-		return nil, gowk.NewError("access token expired")
+	if err := o.ensureClientEnabled(ctx, token.ClientID); err != nil {
+		revokeAccessTokenCache(ctx, accessToken)
+		return nil, err
 	}
-
-	return &oauth2Token, nil
+	return token, nil
 }
 
 // OIDCService OIDC Service
@@ -627,6 +656,11 @@ func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
 			"sub", "name", "preferred_username", "email", "email_verified",
 			"phone_number", "phone_number_verified", "picture", "updated_at",
 		},
+		EndSessionEndpoint:                        baseURL + "/oauth2/end_session",
+		RevocationEndpoint:                        baseURL + "/oauth2/revoke",
+		IntrospectionEndpoint:                     baseURL + "/oauth2/introspect",
+		RevocationEndpointAuthMethodsSupported:    []string{"client_secret_basic", "client_secret_post"},
+		IntrospectionEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post"},
 	}
 }
 
@@ -651,20 +685,54 @@ func (o *OIDCService) GetUserInfo(ctx context.Context, userID int64) (*dto.OIDCU
 	}, nil
 }
 
+// UserInfoForScope 按 access token 授予的 scope 输出用户信息（OIDC Core §5.3.2）：
+// 只返回 openid 时仅含 sub；profile / email / phone 分别解锁对应字段。
+// 不做这层过滤，接入方只要拿到 access token 就能读到未申请授权的手机号与邮箱。
+func (o *OIDCService) UserInfoForScope(ctx context.Context, userID int64, scope string) (*dto.OIDCUserInfo, error) {
+	full, err := o.GetUserInfo(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	hasScope := func(s string) bool {
+		for _, granted := range strings.Fields(scope) {
+			if granted == s {
+				return true
+			}
+		}
+		return false
+	}
+
+	filtered := &dto.OIDCUserInfo{Sub: full.Sub}
+	if hasScope("profile") {
+		filtered.Name = full.Name
+		filtered.PreferredUsername = full.PreferredUsername
+	}
+	if hasScope("email") {
+		filtered.Email = full.Email
+		filtered.EmailVerified = full.EmailVerified
+	}
+	if hasScope("phone") {
+		filtered.PhoneNumber = full.PhoneNumber
+		filtered.PhoneVerified = full.PhoneVerified
+	}
+	return filtered, nil
+}
+
 // GenerateIDToken 按 OIDC Core 1.0 §5.4 的 scope→claim 映射输出 ID Token：
-//   - openid（必备） → sub/iss/aud/exp/iat/nonce
+//   - openid（必备） → sub/iss/aud/exp/iat/nonce/at_hash
 //   - profile        → name / preferred_username / picture …
 //   - email          → email / email_verified
 //   - phone          → phone_number / phone_number_verified
 //
 // scope 为空时按"全量"输出，兼容内部 /login 等无 OAuth2 scope 的旧调用。
-func (o *OIDCService) GenerateIDToken(ctx context.Context, userID int64, clientID, nonce, scope string, ttl int64) (string, error) {
+//
+// accessToken 用于计算 at_hash（OIDC Core §3.1.3.6：从 token 端点签发的 ID Token
+// 必须携带访问令牌的哈希），避免严格的验证方因缺少该声明而拒收。
+func (o *OIDCService) GenerateIDToken(ctx context.Context, userID int64, clientID, nonce, scope, accessToken string, ttl int64) (string, error) {
 	userInfo, err := o.GetUserInfo(ctx, userID)
 	if err != nil {
 		return "", err
-	}
-	if ttl <= 0 {
-		ttl = defaultAccessTokenTTL
 	}
 
 	hasScope := func(s string) bool {
@@ -689,6 +757,11 @@ func (o *OIDCService) GenerateIDToken(ctx context.Context, userID int64, clientI
 	}
 	if nonce != "" {
 		payload["nonce"] = nonce
+	}
+	if accessToken != "" {
+		// at_hash = base64url(SHA-256(access_token) 的左半部分)。
+		sum := sha256.Sum256([]byte(accessToken))
+		payload["at_hash"] = base64.RawURLEncoding.EncodeToString(sum[:len(sum)/2])
 	}
 	if hasScope("profile") {
 		if userInfo.Name != "" {
@@ -922,10 +995,13 @@ func (s *OAuth2ClientService) CreateOAuth2Client(ctx context.Context, params *dt
 		refreshTokenTTL = 2592000 // 30 days default
 	}
 
-	// For now, return placeholder response
-	// This would require database query implementation
+	clientID, err := s.resolveClientID(ctx, params.ID)
+	if err != nil {
+		return nil, err
+	}
+
 	o, err := s.getQueries(ctx).CreateOAuth2Client(ctx, db2.CreateOAuth2ClientParams{
-		ID:              gowk.GenerateRandomString(32),
+		ID:              clientID,
 		Name:            params.Name,
 		Secret:          gowk.GenerateRandomString(64),
 		RedirectUris:    string(redirectURIsJSON),
@@ -941,6 +1017,26 @@ func (s *OAuth2ClientService) CreateOAuth2Client(ctx context.Context, params *dt
 		return nil, err
 	}
 	return buildOAuth2ClientResponseWithSecret(o, true), nil
+}
+
+// oauth2ClientIDPattern 限定可自定义的 client_id 字符集：出现在 URL 查询参数
+// 与第三方配置里，只允许不会引起转义歧义的字符。
+var oauth2ClientIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+// resolveClientID 优先使用调用方指定的 client_id（便于接入方配置易读名字），
+// 留空时生成随机值；指定值必须符合字符集且未被占用。
+func (s *OAuth2ClientService) resolveClientID(ctx context.Context, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return gowk.GenerateRandomString(32), nil
+	}
+	if !oauth2ClientIDPattern.MatchString(requested) {
+		return "", gowk.NewError("client_id 只能包含字母、数字、点、下划线和连字符，长度 1-64")
+	}
+	if _, err := s.getQueries(ctx).GetOAuth2Client(ctx, requested); err == nil {
+		return "", gowk.NewError("client_id 已存在")
+	}
+	return requested, nil
 }
 
 // UpdateOAuth2Client 真正将 params 写入数据库；未在 params 中提供的字段保持不变。

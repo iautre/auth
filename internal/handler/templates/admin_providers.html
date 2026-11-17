@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第三方登录管理</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      color: #18212f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 32px 24px 64px;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(68, 112, 255, .13), transparent 30%),
+        radial-gradient(circle at 88% 82%, rgba(36, 194, 151, .1), transparent 28%),
+        #f4f6f8;
+    }
+    .wrap { width: min(100%, 940px); margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+    .sub { margin: 6px 0 0; color: #667085; font-size: 14px; }
+    .card {
+      padding: 24px;
+      border: 1px solid rgba(24, 33, 47, .09);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: 0 16px 48px rgba(37, 47, 68, .08);
+      margin-bottom: 18px;
+    }
+    button {
+      height: 42px;
+      padding: 0 18px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #315efb, #7147e8);
+      color: #fff;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    button.secondary { background: #fff; border-color: #d8dee8; color: #344054; }
+    button.danger { background: #fff; border-color: #f5c2c0; color: #d92d20; }
+    button.small { height: 34px; padding: 0 12px; font-size: 13px; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .provider {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      padding: 18px 0;
+      border-top: 1px solid #eaecf0;
+    }
+    .provider:first-of-type { border-top: 0; padding-top: 0; }
+    .provider h2 { margin: 0 0 6px; font-size: 17px; }
+    .meta { color: #667085; font-size: 13px; line-height: 1.7; word-break: break-all; }
+    .badge {
+      display: inline-block;
+      margin-left: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      vertical-align: middle;
+    }
+    .badge.on { background: #e7f8f0; color: #067647; }
+    .badge.off { background: #f2f4f7; color: #667085; }
+    .callback {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .callback code { background: #f2f4f7; padding: 4px 8px; border-radius: 6px; word-break: break-all; }
+    label { display: block; margin: 16px 0 6px; font-size: 14px; font-weight: 650; }
+    input[type="text"], input[type="url"], input[type="password"] {
+      width: 100%;
+      height: 44px;
+      padding: 0 12px;
+      border: 1px solid #d8dee8;
+      border-radius: 10px;
+      background: #fff;
+      color: inherit;
+      font: inherit;
+    }
+    .hint { margin: 6px 0 0; color: #98a2b3; font-size: 12px; }
+    .check { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px; font-weight: 500; }
+    .check input { width: 16px; height: 16px; }
+    #message { min-height: 20px; margin: 12px 0 0; font-size: 14px; color: #d92d20; }
+    #message.ok { color: #067647; }
+    dialog {
+      width: min(100% - 32px, 560px);
+      padding: 0;
+      border: 0;
+      border-radius: 16px;
+      background: #fff;
+      color: inherit;
+      box-shadow: 0 24px 80px rgba(16, 24, 40, .28);
+    }
+    .dialog-body { padding: 26px; max-height: 82vh; overflow: auto; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+    .empty { color: #667085; padding: 18px 0; }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #0e1118; color: #f2f4f7; }
+      body { background: radial-gradient(circle at 16% 10%, rgba(74, 99, 227, .22), transparent 32%), #0e1118; }
+      .card, dialog { background: #151a24; border-color: rgba(255,255,255,.09); }
+      .provider { border-color: #232a36; }
+      .meta, .sub, .empty { color: #98a2b3; }
+      input[type="text"], input[type="url"], input[type="password"] { background: #111722; border-color: #353d4c; }
+      button.secondary { background: #111722; border-color: #353d4c; color: #e4e7ec; }
+      button.danger { background: #111722; border-color: #5c2b28; color: #f97066; }
+      .callback code { background: #111722; }
+      .badge.off { background: #232a36; color: #98a2b3; }
+      .badge.on { background: #123527; color: #6ce9a6; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap" id="app"
+     data-list-path="{{.ListPath}}"
+     data-account-path="{{.AccountPath}}">
+  <header>
+    <div>
+      <h1>第三方登录</h1>
+      <p class="sub">用户可以用这里的 provider 一键登录。新增后把回调地址填到对方后台。</p>
+    </div>
+    <div class="row">
+      <a href="{{.AccountPath}}"><button class="secondary" type="button">返回个人中心</button></a>
+      <button id="create" type="button">新增登录方式</button>
+    </div>
+  </header>
+
+  <section class="card" aria-labelledby="list-title">
+    <div id="list"></div>
+    <p id="message" role="alert" aria-live="polite"></p>
+  </section>
+</div>
+
+<dialog id="editor" aria-labelledby="editor-title">
+  <form class="dialog-body" id="editor-form" method="dialog">
+    <h1 id="editor-title" style="margin:0;font-size:20px;">新增登录方式</h1>
+    <p class="sub" id="editor-sub">标识创建后不可修改。</p>
+
+    <label for="f-name">标识</label>
+    <input id="f-name" type="text" placeholder="google" autocomplete="off" required>
+    <p class="hint">小写字母、数字、下划线、连字符，2-32 位。会出现在回调地址里。</p>
+
+    <label for="f-label">显示名称</label>
+    <input id="f-label" type="text" placeholder="Google" autocomplete="off" required>
+
+    <label for="f-issuer">Issuer</label>
+    <input id="f-issuer" type="url" placeholder="https://accounts.google.com" autocomplete="off" required>
+    <p class="hint">第三方 OIDC 的 issuer，必须能访问 {issuer}/.well-known/openid-configuration。</p>
+
+    <label for="f-client-id">Client ID</label>
+    <input id="f-client-id" type="text" autocomplete="off" required>
+
+    <label for="f-client-secret">Client Secret</label>
+    <input id="f-client-secret" type="password" autocomplete="new-password">
+    <p class="hint" id="secret-hint">创建时必填；编辑时留空表示不修改。</p>
+
+    <label for="f-scopes">Scopes</label>
+    <input id="f-scopes" type="text" placeholder="openid email profile" autocomplete="off">
+
+    <div class="check"><input id="f-auto-register" type="checkbox" checked><label for="f-auto-register" style="margin:0;">首次登录自动建号</label></div>
+    <div class="check"><input id="f-enabled" type="checkbox" checked><label for="f-enabled" style="margin:0;">启用</label></div>
+
+    <p id="editor-message" role="alert" aria-live="polite"></p>
+    <div class="dialog-actions">
+      <button class="secondary" type="button" id="editor-cancel">取消</button>
+      <button type="submit" id="editor-save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  const app = document.getElementById('app');
+  const listEl = document.getElementById('list');
+  const messageEl = document.getElementById('message');
+  const dialog = document.getElementById('editor');
+  const form = document.getElementById('editor-form');
+  const editorMessage = document.getElementById('editor-message');
+  let editing = null;
+
+  async function request(path, options = {}) {
+    const response = await fetch(path, {
+      credentials: 'same-origin',
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.code !== 0) {
+      throw new Error(payload.message || payload.msg || '操作失败');
+    }
+    return payload.data;
+  }
+
+  function setMessage(text, ok = false) {
+    messageEl.textContent = text;
+    messageEl.classList.toggle('ok', !!text && ok);
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  function render(providers) {
+    if (!providers.length) {
+      listEl.innerHTML = '<p class="empty">还没有配置任何第三方登录方式。</p>';
+      return;
+    }
+    listEl.innerHTML = providers.map(p => `
+      <article class="provider" data-id="${p.id}">
+        <div>
+          <h2>${escapeHTML(p.label)}${p.enabled ? '<span class="badge on">启用</span>' : '<span class="badge off">停用</span>'}</h2>
+          <div class="meta">
+            <div>标识：<strong>${escapeHTML(p.name)}</strong>　Client ID：${escapeHTML(p.client_id)}</div>
+            <div>Issuer：${escapeHTML(p.issuer)}</div>
+            <div>Secret：${p.secret_set ? '已配置' : '未配置'}　自动建号：${p.auto_register ? '开' : '关'}</div>
+            <div class="callback"><span>回调地址</span><code>${escapeHTML(p.callback_url)}</code>
+              <button class="secondary small" type="button" data-copy="${escapeHTML(p.callback_url)}">复制</button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="secondary small" type="button" data-edit="${p.id}">编辑</button>
+          <button class="danger small" type="button" data-delete="${p.id}">删除</button>
+        </div>
+      </article>
+    `).join('');
+  }
+
+  async function load() {
+    try {
+      const providers = await request(app.dataset.listPath, { method: 'GET' });
+      render(providers || []);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  function openEditor(provider) {
+    editing = provider || null;
+    document.getElementById('editor-title').textContent = provider ? '编辑登录方式' : '新增登录方式';
+    document.getElementById('editor-sub').textContent = provider ? '标识不可修改；密钥留空表示保持原值。' : '标识创建后不可修改。';
+    document.getElementById('secret-hint').textContent = provider ? '留空表示不修改现有密钥。' : '创建时必填。';
+
+    form.elements['f-name'].value = provider?.name || '';
+    form.elements['f-name'].disabled = !!provider;
+    form.elements['f-label'].value = provider?.label || '';
+    form.elements['f-issuer'].value = provider?.issuer || '';
+    form.elements['f-client-id'].value = provider?.client_id || '';
+    form.elements['f-client-secret'].value = '';
+    form.elements['f-scopes'].value = provider?.scopes || 'openid email profile';
+    form.elements['f-auto-register'].checked = provider ? !!provider.auto_register : true;
+    form.elements['f-enabled'].checked = provider ? !!provider.enabled : true;
+    editorMessage.textContent = '';
+    dialog.showModal();
+  }
+
+  document.getElementById('create').addEventListener('click', () => openEditor(null));
+  document.getElementById('editor-cancel').addEventListener('click', () => dialog.close());
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const saveButton = document.getElementById('editor-save');
+    saveButton.disabled = true;
+    editorMessage.textContent = '';
+
+    const body = {
+      label: form.elements['f-label'].value.trim(),
+      issuer: form.elements['f-issuer'].value.trim(),
+      client_id: form.elements['f-client-id'].value.trim(),
+      scopes: form.elements['f-scopes'].value.trim(),
+      auto_register: form.elements['f-auto-register'].checked,
+      enabled: form.elements['f-enabled'].checked
+    };
+    const secret = form.elements['f-client-secret'].value.trim();
+    if (secret) body.client_secret = secret;
+    if (!editing) body.name = form.elements['f-name'].value.trim();
+
+    try {
+      if (editing) {
+        await request(`${app.dataset.listPath}/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await request(app.dataset.listPath, { method: 'POST', body: JSON.stringify(body) });
+      }
+      dialog.close();
+      setMessage('已保存', true);
+      await load();
+    } catch (error) {
+      editorMessage.textContent = error.message;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  listEl.addEventListener('click', async (event) => {
+    const editId = event.target.dataset.edit;
+    const deleteId = event.target.dataset.delete;
+    const copyText = event.target.dataset.copy;
+
+    if (copyText) {
+      try {
+        await navigator.clipboard.writeText(copyText);
+        setMessage('回调地址已复制', true);
+      } catch {
+        setMessage('复制失败，请手动选择');
+      }
+      return;
+    }
+
+    if (editId) {
+      try {
+        const providers = await request(app.dataset.listPath, { method: 'GET' });
+        const provider = (providers || []).find(item => String(item.id) === editId);
+        if (provider) openEditor(provider);
+      } catch (error) {
+        setMessage(error.message);
+      }
+      return;
+    }
+
+    if (deleteId) {
+      if (!window.confirm('确定删除这个登录方式？已绑定的用户会失去该入口。')) return;
+      try {
+        await request(`${app.dataset.listPath}/${deleteId}`, { method: 'DELETE' });
+        setMessage('已删除', true);
+        await load();
+      } catch (error) {
+        setMessage(error.message);
+      }
+    }
+  });
+
+  load();
+</script>
+</body>
+</html>

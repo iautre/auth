@@ -10,29 +10,22 @@ import (
 	"github.com/iautre/gowk"
 )
 
-// OAuth2 token validation middleware
+// OAuth2TokenMiddleware 校验 Bearer access token，并把 token 与 user_id 写入上下文。
+// 失败响应遵循 RFC 6750 §3，接入方库依赖 WWW-Authenticate 判断失败类型。
 func OAuth2TokenMiddleware(ctx *gin.Context) {
-	authHeader := ctx.GetHeader("Authorization")
-	if authHeader == "" {
-		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("Missing Authorization header"))
+	token, ok := strings.CutPrefix(ctx.GetHeader("Authorization"), "Bearer ")
+	if !ok || strings.TrimSpace(token) == "" {
+		writeBearerError(ctx, "invalid_request", "missing or malformed Authorization header")
 		return
 	}
 
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-	if token == "" {
-		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("Invalid Authorization header format"))
-		return
-	}
-
-	// Use OAuth2Service to validate token
 	var oauth2Service service.OAuth2Service
 	oauth2Token, err := oauth2Service.ValidateAccessToken(ctx, token)
 	if err != nil {
-		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("Invalid or expired access token"))
+		writeBearerError(ctx, "invalid_token", "access token is invalid or expired")
 		return
 	}
 
-	// Store token info in context
 	constant.StoreContextOAuth2Token(ctx, oauth2Token)
 	ctx.Next()
 }

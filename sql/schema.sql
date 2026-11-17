@@ -157,6 +157,69 @@ CREATE TABLE IF NOT EXISTS public.auth_passkey_challenge
     created      timestamp with time zone NOT NULL DEFAULT now()
 );
 
+-- One-time verification codes for SMS / email
+CREATE TABLE IF NOT EXISTS public.auth_verification_code
+(
+    id          bigserial PRIMARY KEY,
+    channel     varchar                  NOT NULL,
+    target      varchar                  NOT NULL,
+    purpose     varchar                  NOT NULL,
+    code_hash   varchar                  NOT NULL,
+    attempts    integer                  NOT NULL DEFAULT 0,
+    expires     timestamp with time zone NOT NULL,
+    consumed_at timestamp with time zone,
+    created     timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT chk_auth_verification_channel CHECK (channel IN ('sms', 'email')),
+    CONSTRAINT chk_auth_verification_purpose CHECK (purpose IN ('login', 'register', 'verify_email', 'verify_phone')),
+    CONSTRAINT chk_auth_verification_attempts CHECK (attempts >= 0)
+);
+
+-- Third-party identity binding (auth as OIDC relying party)
+CREATE TABLE IF NOT EXISTS public.auth_identity
+(
+    id             bigserial PRIMARY KEY,
+    user_id        bigint                   NOT NULL REFERENCES public.auth_user (id) ON DELETE CASCADE,
+    provider       varchar                  NOT NULL,
+    issuer         varchar                  NOT NULL,
+    subject        varchar                  NOT NULL,
+    email          varchar,
+    email_verified boolean                  NOT NULL DEFAULT false,
+    display_name   varchar,
+    avatar         varchar,
+    created        timestamp with time zone NOT NULL DEFAULT now(),
+    updated        timestamp with time zone NOT NULL DEFAULT now(),
+    UNIQUE (provider, subject)
+);
+
+-- Federated login session (state / nonce / PKCE verifier)
+CREATE TABLE IF NOT EXISTS public.auth_federated_session
+(
+    state_hash    varchar PRIMARY KEY,
+    provider      varchar                  NOT NULL,
+    nonce         varchar                  NOT NULL,
+    code_verifier varchar                  NOT NULL,
+    return_to     varchar,
+    expires       timestamp with time zone NOT NULL,
+    created       timestamp with time zone NOT NULL DEFAULT now()
+);
+
+-- Third-party OIDC provider configuration (managed from the admin page)
+CREATE TABLE IF NOT EXISTS public.auth_identity_provider
+(
+    id            bigserial PRIMARY KEY,
+    name          varchar                  NOT NULL UNIQUE,
+    label         varchar                  NOT NULL,
+    issuer        varchar                  NOT NULL,
+    client_id     varchar                  NOT NULL,
+    client_secret varchar                  NOT NULL,
+    scopes        varchar                  NOT NULL DEFAULT 'openid email profile',
+    auto_register boolean                  NOT NULL DEFAULT true,
+    enabled       boolean                  NOT NULL DEFAULT true,
+    created       timestamp with time zone NOT NULL DEFAULT now(),
+    updated       timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT chk_auth_identity_provider_name CHECK (name ~ '^[a-z0-9_-]{2,32}$')
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_auth_user_phone   ON public.auth_user (phone);
 CREATE INDEX IF NOT EXISTS idx_auth_user_email   ON public.auth_user (email) WHERE email IS NOT NULL;
@@ -174,6 +237,10 @@ CREATE INDEX IF NOT EXISTS idx_auth_oauth2_refresh_token_expires        ON publi
 CREATE INDEX IF NOT EXISTS idx_auth_oidc_jwk_kid                        ON public.auth_oidc_jwk (kid);
 CREATE INDEX IF NOT EXISTS idx_auth_passkey_credential_user_id          ON public.auth_passkey_credential (user_id);
 CREATE INDEX IF NOT EXISTS idx_auth_passkey_challenge_expires           ON public.auth_passkey_challenge (expires);
+CREATE INDEX IF NOT EXISTS idx_auth_verification_lookup                 ON public.auth_verification_code (channel, target, purpose, created DESC);
+CREATE INDEX IF NOT EXISTS idx_auth_verification_expires                ON public.auth_verification_code (expires);
+CREATE INDEX IF NOT EXISTS idx_auth_identity_user_id                    ON public.auth_identity (user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_federated_session_expires           ON public.auth_federated_session (expires);
 
 -- Ownership
 ALTER TABLE public.auth_user                    OWNER TO postgres;
@@ -186,3 +253,7 @@ ALTER TABLE public.auth_oauth2_refresh_token    OWNER TO postgres;
 ALTER TABLE public.auth_oidc_jwk                OWNER TO postgres;
 ALTER TABLE public.auth_passkey_credential      OWNER TO postgres;
 ALTER TABLE public.auth_passkey_challenge       OWNER TO postgres;
+ALTER TABLE public.auth_verification_code       OWNER TO postgres;
+ALTER TABLE public.auth_identity                OWNER TO postgres;
+ALTER TABLE public.auth_federated_session       OWNER TO postgres;
+ALTER TABLE public.auth_identity_provider       OWNER TO postgres;

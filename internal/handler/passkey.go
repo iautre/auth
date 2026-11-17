@@ -203,8 +203,16 @@ func bindPasskeyFinish(ctx *gin.Context) (*passkeyFinishRequest, bool) {
 	return &request, true
 }
 
+// BrowserSameOrigin 阻挡浏览器发起的跨站写操作（CSRF）。
+// 没有 Origin 头的请求（curl、服务端调用、非浏览器客户端）不属于 CSRF 场景：
+// 它们不携带浏览器自动附上的 cookie，也就无法被第三方页面伪造，直接放行。
 func BrowserSameOrigin(ctx *gin.Context) {
-	if err := service.ValidateBrowserOrigin(ctx.GetHeader("Origin")); err != nil {
+	origin := ctx.GetHeader("Origin")
+	if origin == "" {
+		ctx.Next()
+		return
+	}
+	if err := service.ValidateBrowserOrigin(origin); err != nil {
 		gowk.Response(ctx, http.StatusForbidden, nil, gowk.NewError("request origin is not allowed"))
 		return
 	}

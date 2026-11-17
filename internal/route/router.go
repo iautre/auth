@@ -30,6 +30,24 @@ func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	u := handler.NewUserHandler(ctx)
 	p := handler.NewPasskeyHandler()
 	otp := handler.NewOTPHandler()
+	auth := handler.NewAuthHandler()
+	identity := handler.NewIdentityHandler()
+	provider := handler.NewIdentityProviderHandler()
+
+	// 无密码登录：一次性验证码（注册即登录）、显式验证码注册
+	ro.POST("/register/code", auth.RegisterWithCode)
+	ro.POST("/login/code", auth.LoginWithCode)
+	ro.POST("/verification/send", auth.SendCode)
+
+	// 当前用户已绑定的第三方身份
+	ro.GET("/identities", gowk.CheckLogin, identity.List)
+	ro.DELETE("/identities/:provider", gowk.CheckLogin, handler.BrowserSameOrigin, identity.Unlink)
+
+	// 第三方登录方式管理（管理员）
+	ro.GET("/admin/identity-providers", gowk.CheckLogin, handler.AdminMiddleware, provider.List)
+	ro.POST("/admin/identity-providers", gowk.CheckLogin, handler.AdminMiddleware, provider.Create)
+	ro.PUT("/admin/identity-providers/:id", gowk.CheckLogin, handler.AdminMiddleware, provider.Update)
+	ro.DELETE("/admin/identity-providers/:id", gowk.CheckLogin, handler.AdminMiddleware, provider.Delete)
 
 	// User endpoints
 	// 注意：POST /login 由 authhttp.MountAPI 注册；Auth 内置的
@@ -69,6 +87,11 @@ func OAuth(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
 	login := handler.OAuth2BrowserLogin(loginURL)
 	ro.GET("/oauth2/authorize", login, o.OAuth2Auth)
 	ro.POST("/oauth2/token", o.OIDCToken)
+	// RFC 7009 撤销、RFC 7662 内省：供接入方主动失效与校验 token。
+	ro.POST("/oauth2/revoke", o.OAuth2Revoke)
+	ro.POST("/oauth2/introspect", o.OAuth2Introspect)
+	// OIDC RP-Initiated Logout：清浏览器会话并跳回登记过的地址。
+	ro.GET("/oauth2/end_session", o.OIDCEndSession)
 
 	// OIDC endpoints
 	ro.GET("/.well-known/openid-configuration", o.OIDCDiscovery)
@@ -76,12 +99,30 @@ func OAuth(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
 	ro.GET("/oidc/jwks", o.OIDCJwks)
 
 	// OAuth2 Client Management endpoints (admin only)
-	ro.POST("/oauth2/clients", handler.OAuth2TokenMiddleware, handler.AdminMiddleware, oc.CreateOAuth2Client)
-	ro.GET("/oauth2/clients", handler.OAuth2TokenMiddleware, handler.AdminMiddleware, oc.ListOAuth2Clients)
-	ro.GET("/oauth2/clients/:id", handler.OAuth2TokenMiddleware, handler.AdminMiddleware, oc.GetOAuth2Client)
-	ro.PUT("/oauth2/clients/:id", handler.OAuth2TokenMiddleware, handler.AdminMiddleware, oc.UpdateOAuth2Client)
-	ro.DELETE("/oauth2/clients/:id/disable", handler.OAuth2TokenMiddleware, handler.AdminMiddleware, oc.DisableOAuth2Client)
-	ro.POST("/oauth2/clients/:id/regenerate-secret", handler.OAuth2TokenMiddleware, handler.AdminMiddleware, oc.RegenerateClientSecret)
+	// 鉴权用平台登录态而非 OAuth2 access token：access token 必须先存在 client
+	// 才能签发，若这里也要求 access token，全新部署将永远无法创建第一个 client。
+	ro.POST("/oauth2/clients", gowk.CheckLogin, handler.AdminMiddleware, oc.CreateOAuth2Client)
+	ro.GET("/oauth2/clients", gowk.CheckLogin, handler.AdminMiddleware, oc.ListOAuth2Clients)
+	ro.GET("/oauth2/clients/:id", gowk.CheckLogin, handler.AdminMiddleware, oc.GetOAuth2Client)
+	ro.PUT("/oauth2/clients/:id", gowk.CheckLogin, handler.AdminMiddleware, oc.UpdateOAuth2Client)
+	ro.DELETE("/oauth2/clients/:id/disable", gowk.CheckLogin, handler.AdminMiddleware, oc.DisableOAuth2Client)
+	ro.POST("/oauth2/clients/:id/regenerate-secret", gowk.CheckLogin, handler.AdminMiddleware, oc.RegenerateClientSecret)
+
+	return ro
+}
+
+// Federated registers third-party OIDC login endpoints: auth acts as the
+// relying party and lets users sign in with an external provider.
+// Paths are fixed at the root because callback URLs must be registered with
+// each provider and cannot move with the host application's API prefix.
+func Federated(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
+	ro := r
+	f := handler.NewFederatedHandler(loginURL)
+
+	// 公开：登录页渲染按钮用
+	ro.GET("/federated/providers", f.Providers)
+	ro.GET("/federated/:provider/login", f.BeginLogin)
+	ro.GET("/federated/:provider/callback", f.Callback)
 
 	return ro
 }

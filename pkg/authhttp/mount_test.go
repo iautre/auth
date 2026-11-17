@@ -16,8 +16,8 @@ func TestMountAPIRegistersOnlyApplicationRoutes(t *testing.T) {
 	router := gin.New()
 
 	module := authhttp.MountAPI(router, authhttp.APIOptions{Prefix: "api/auth/"})
-	if module == nil || module.Group == nil || module.CheckLogin == nil || module.CheckAdmin == nil {
-		t.Fatal("Mount returned an incomplete module")
+	if module == nil || module.Group == nil || module.CheckLogin == nil || module.UserAuth == nil || module.CheckAdmin == nil {
+		t.Fatal("MountAPI 返回的 Module 字段不完整")
 	}
 
 	want := map[string]bool{

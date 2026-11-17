@@ -178,6 +178,7 @@
         data-otp-credentials-path="{{.OTPCredentialsPath}}"
         data-otp-enrollment-begin-path="{{.OTPEnrollmentBeginPath}}"
         data-otp-enrollment-finish-path="{{.OTPEnrollmentFinishPath}}"
+        data-identities-path="{{.IdentitiesPath}}"
         data-passkey-credentials-path="{{.PasskeyCredentialsPath}}"
         data-passkey-register-begin-path="{{.PasskeyRegisterBeginPath}}"
         data-passkey-register-finish-path="{{.PasskeyRegisterFinishPath}}">
@@ -254,6 +255,18 @@
           <p id="passkey-message" class="message" role="status" aria-live="polite"></p>
         </section>
       </div>
+
+      <section class="card" aria-labelledby="identity-title">
+        <div class="section-header">
+          <div>
+            <h2 id="identity-title">第三方账号</h2>
+            <p class="subtitle">已绑定的第三方登录方式。解绑后仍可用其他方式登录。</p>
+          </div>
+        </div>
+        <div id="identity-list" class="credential-list" aria-live="polite"></div>
+        <p id="identity-empty" class="empty muted" hidden>尚未绑定第三方账号。</p>
+        <p id="identity-message" class="message" role="status" aria-live="polite"></p>
+      </section>
     </div>
   </main>
 
@@ -306,6 +319,9 @@
     const passkeyList = document.getElementById('passkey-list');
     const passkeyEmpty = document.getElementById('passkey-empty');
     const passkeyMessage = document.getElementById('passkey-message');
+    const identityList = document.getElementById('identity-list');
+    const identityEmpty = document.getElementById('identity-empty');
+    const identityMessage = document.getElementById('identity-message');
     const addPasskeyButton = document.getElementById('add-passkey');
     const otpDialog = document.getElementById('otp-dialog');
     const actionDialog = document.getElementById('action-dialog');
@@ -499,8 +515,42 @@
       return item;
     }
 
-    async function loadOTPs() {
-      const credentials = await requestJSON(container.dataset.otpCredentialsPath, { method: 'GET' });
+    async function loadIdentities() {
+      if (!container.dataset.identitiesPath) return;
+      const bindings = await requestJSON(container.dataset.identitiesPath, { method: 'GET' });
+      identityList.replaceChildren();
+      identityEmpty.hidden = bindings.length !== 0;
+      bindings.forEach(binding => {
+        const parts = [];
+        if (binding.email) parts.push(binding.email);
+        else if (binding.display_name) parts.push(binding.display_name);
+        parts.push(`绑定于 ${formatTime(binding.created, '未知')}`);
+        identityList.append(credentialElement(
+          binding.provider,
+          parts.join(' · '),
+          () => void deleteIdentity(binding)
+        ));
+      });
+    }
+
+    async function deleteIdentity(binding) {
+      const decision = await openActionDialog({
+        title: '解绑第三方账号',
+        description: `确定解绑“${binding.provider}”吗？解绑后将不能再使用它登录。`,
+        confirmText: '确认解绑',
+        danger: true
+      });
+      if (!decision.confirmed) return;
+      try {
+        await requestJSON(`${container.dataset.identitiesPath}/${encodeURIComponent(binding.provider)}`, { method: 'DELETE' });
+        setMessage(identityMessage, '已解绑');
+        await loadIdentities();
+      } catch (error) {
+        setMessage(identityMessage, error instanceof Error ? error.message : '解绑失败', true);
+      }
+    }
+
+    async function loadOTPs() {      const credentials = await requestJSON(container.dataset.otpCredentialsPath, { method: 'GET' });
       otpList.replaceChildren();
       otpEmpty.hidden = credentials.length !== 0;
       credentials.forEach(credential => {
@@ -855,7 +905,7 @@
       document.getElementById('passkey-unsupported').hidden = false;
     }
 
-    Promise.all([loadProfile(), loadOTPs(), loadPasskeys()]).catch(error => {
+    Promise.all([loadProfile(), loadOTPs(), loadPasskeys(), loadIdentities()]).catch(error => {
       const text = error instanceof Error ? error.message : '个人中心加载失败';
       setMessage(profileMessage, text, true);
     });

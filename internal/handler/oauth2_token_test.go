@@ -12,8 +12,9 @@ func TestParseBasicAuth(t *testing.T) {
 	encode := func(raw string) string {
 		return "Basic " + base64.StdEncoding.EncodeToString([]byte(raw))
 	}
-	// RFC 6749 §2.3.1：凭据先做 application/x-www-form-urlencoded 编码再拼进 Basic。
-	formEncoded := encode(url.QueryEscape("client+id") + ":" + url.QueryEscape("sec/ret+="))
+	// RFC 6749 §2.3.1：凭据先做 application/x-www-form-urlencoded 编码再拼进 Basic，
+	// 因此头里的 "+" 代表空格，取出来必须还原。
+	formEncoded := encode(url.QueryEscape("client id") + ":" + url.QueryEscape("sec/ret +="))
 
 	cases := []struct {
 		name       string
@@ -24,7 +25,7 @@ func TestParseBasicAuth(t *testing.T) {
 	}{
 		{name: "标准凭据", header: encode("my-client:my-secret"), wantID: "my-client", wantSecret: "my-secret", wantOK: true},
 		{name: "secret 含冒号", header: encode("c:p:a:ss"), wantID: "c", wantSecret: "p:a:ss", wantOK: true},
-		{name: "form 编码凭据", header: formEncoded, wantID: "client id", wantSecret: "sec/ret +", wantOK: true},
+		{name: "form 编码凭据", header: formEncoded, wantID: "client id", wantSecret: "sec/ret +=", wantOK: true},
 		{name: "空头", header: "", wantOK: false},
 		{name: "非 Basic 方案", header: "Bearer abc", wantOK: false},
 		{name: "非法 base64", header: "Basic ***", wantOK: false},
