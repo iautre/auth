@@ -98,11 +98,58 @@ func NewOAuth2Handler(ctx context.Context) *OAuth2Handler {
 	}
 }
 
+// OAuth2Auth 处理授权请求（GET）。校验通过后先看是否已就该 client 授过权，
+// 没有则渲染授权确认页，避免已登录状态下被任意第三方客户端静默取走身份。
 func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
-	var params dto.OAuth2AuthRequest
-	if err := ctx.ShouldBindQuery(&params); err != nil {
-		writeOAuthError(ctx, err, service.OAuthErrInvalidRequest, http.StatusBadRequest)
+	params, client, ok := o.authorizeRequest(ctx, func(p *dto.OAuth2AuthRequest) error {
+		return ctx.ShouldBindQuery(p)
+	})
+	if !ok {
 		return
+	}
+
+	if !hasConsent(ctx, params.ClientID) {
+		renderConsentPage(ctx, params, client)
+		return
+	}
+
+	o.issueAuthorizationCode(ctx, params)
+}
+
+// OAuth2AuthDecision 处理授权确认页的提交：允许则登记同意并发码，拒绝则带
+// access_denied 回跳。表单走 POST 且依赖会话 cookie，跨站提交不会携带该
+// cookie（浏览器默认 SameSite=Lax），因此无需额外 CSRF 令牌。
+func (o *OAuth2Handler) OAuth2AuthDecision(ctx *gin.Context) {
+	params, _, ok := o.authorizeRequest(ctx, func(p *dto.OAuth2AuthRequest) error {
+		return ctx.ShouldBind(p)
+	})
+	if !ok {
+		return
+	}
+
+	switch ctx.PostForm("decision") {
+	case "allow":
+		grantConsent(ctx, params.ClientID)
+		o.issueAuthorizationCode(ctx, params)
+	case "deny":
+		redirectOAuthErrorFrom(ctx, params.RedirectURI, params.State, &service.OAuthError{
+			Code:        service.OAuthErrAccessDenied,
+			Description: "user denied the authorization request",
+			Status:      http.StatusBadRequest,
+		})
+	default:
+		writeOAuthError(ctx, errors.New("decision must be allow or deny"),
+			service.OAuthErrInvalidRequest, http.StatusBadRequest)
+	}
+}
+
+// authorizeRequest 完成授权请求的公共校验，失败时已经写好响应。
+// bind 由调用方提供，因为 GET 读查询串、POST 读表单。
+func (o *OAuth2Handler) authorizeRequest(ctx *gin.Context, bind func(*dto.OAuth2AuthRequest) error) (*dto.OAuth2AuthRequest, *service.AuthorizedClient, bool) {
+	var params dto.OAuth2AuthRequest
+	if err := bind(&params); err != nil {
+		writeOAuthError(ctx, err, service.OAuthErrInvalidRequest, http.StatusBadRequest)
+		return nil, nil, false
 	}
 
 	// 未登录时既不查库也不重定向：宿主未提供登录页（LoginURL 为空）时，
@@ -114,7 +161,7 @@ func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
 			Description: "user is not authenticated",
 			Status:      http.StatusUnauthorized,
 		}, service.OAuthErrInvalidRequest, http.StatusUnauthorized)
-		return
+		return nil, nil, false
 	}
 
 	// 第二步判断"能否把用户送回这个客户端"。这一步失败时 redirect_uri 本身
@@ -122,17 +169,28 @@ func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
 	client, err := o.oauth2Service.ValidateClientRedirect(ctx, params.ClientID, params.RedirectURI)
 	if err != nil {
 		writeOAuthError(ctx, err, service.OAuthErrInvalidRequest, http.StatusBadRequest)
-		return
+		return nil, nil, false
+	}
+
+	// 客户端可能不带 scope：按它自己登记的 scope 补齐，避免按参数错误拒绝委托。
+	if strings.TrimSpace(params.Scope) == "" {
+		params.Scope = client.DefaultScope()
 	}
 
 	// redirect_uri 自此可信，后续参数错误改为带 error 重定向回去，
 	// 让接入方能拿到具体原因而不是一个无法解析的错误页。
 	if err := o.oauth2Service.ValidateAuthRequest(client, &params); err != nil {
 		redirectOAuthErrorFrom(ctx, params.RedirectURI, params.State, err)
-		return
+		return nil, nil, false
 	}
 
-	// Generate authorization code using existing service
+	return &params, client, true
+}
+
+// issueAuthorizationCode 签发授权码并把浏览器送回客户端的 redirect_uri。
+func (o *OAuth2Handler) issueAuthorizationCode(ctx *gin.Context, params *dto.OAuth2AuthRequest) {
+	userID := gowk.LoginId(ctx)
+
 	authCode, err := o.oauth2Service.GenerateAuthorizationCode(
 		ctx,
 		params.ClientID,

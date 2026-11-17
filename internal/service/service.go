@@ -56,9 +56,23 @@ func (u *UserService) GetByPhone(ctx context.Context, phone string) (db2.AuthUse
 	return u.getQueries(ctx).UserByPhone(ctx, pgtype.Text{String: phone, Valid: true})
 }
 
-// Login 登录
+// getByAccount 按账号形态查用户：含 @ 视为邮箱，否则视为手机号。
+// TOTP 登录与邮箱验证码登录共用同一套账号标识口径，避免两处判断分叉。
+func (u *UserService) getByAccount(ctx context.Context, account string) (db2.AuthUser, error) {
+	account = strings.TrimSpace(account)
+	if account == "" {
+		return db2.AuthUser{}, gowk.NewError("account cannot be empty")
+	}
+	if strings.Contains(account, "@") {
+		return u.getQueries(ctx).UserByEmail(ctx, normalizeTarget(account))
+	}
+	return u.GetByPhone(ctx, account)
+}
+
+// Login 登录：账号可以是手机号或邮箱，凭据是用户绑定的 TOTP 动态口令。
+// 账号不存在与凭据错误一律返回同一句 "user not found"，不区分——避免暴露账号是否注册。
 func (u *UserService) Login(ctx context.Context, params *dto.LoginParams) (db2.AuthUser, error) {
-	user, err := u.GetByPhone(ctx, params.Account)
+	user, err := u.getByAccount(ctx, params.Account)
 	if err != nil {
 		return db2.AuthUser{}, gowk.NewError("user not found")
 	}
@@ -158,8 +172,20 @@ func (o *OAuth2Service) GenerateAuthorizationCode(ctx context.Context, clientID 
 // "后续参数有误"（可以带 error 回到 redirect_uri），见 RFC 6749 §4.1.2.1。
 type AuthorizedClient struct {
 	ID     string
+	Name   string
 	Secret string
 	Scopes string
+}
+
+// DefaultScope 返回授权请求未携带 scope 时应当使用的集合：优先用该 client
+// 自己登记的 scope，登记为空（视为不限制）才退到全局默认。
+// 不能无条件用全局默认——只登记了 openid 的 client 会被判成越权 scope。
+func (c *AuthorizedClient) DefaultScope() string {
+	var scopes []string
+	if err := json.Unmarshal([]byte(c.Scopes), &scopes); err == nil && len(scopes) > 0 {
+		return strings.Join(scopes, " ")
+	}
+	return DefaultAuthorizeScope
 }
 
 // ValidateClientRedirect 只判断"能否把用户送回这个客户端"：client 存在、启用、
@@ -180,7 +206,7 @@ func (o *OAuth2Service) ValidateClientRedirect(ctx context.Context, clientID, re
 	}
 	for _, uri := range redirectURIs {
 		if uri == redirectURI {
-			return &AuthorizedClient{ID: client.ID, Secret: client.Secret, Scopes: client.Scopes}, nil
+			return &AuthorizedClient{ID: client.ID, Name: client.Name, Secret: client.Secret, Scopes: client.Scopes}, nil
 		}
 	}
 	return nil, invalidRequest("redirect_uri does not match any registered value")
@@ -648,8 +674,9 @@ func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
 		GrantTypesSupported:              []string{"authorization_code", "refresh_token", "client_credentials"},
 		SubjectTypesSupported:            []string{"public"},
 		IDTokenSigningAlgValuesSupported: []string{"RS256"},
-		// /oauth2/token 同时接受 form 参数与 HTTP Basic 两种客户端认证方式。
-		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post"},
+		// /oauth2/token 同时接受 form 参数与 HTTP Basic 两种客户端认证方式；
+		// none 供动态注册出来的 public client 使用（凭据为空，靠 PKCE 把关）。
+		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "none"},
 		// 授权端点受理 S256 与 plain 两种 PKCE 变换。
 		CodeChallengeMethodsSupported: []string{"S256", "plain"},
 		ClaimsSupported: []string{
@@ -659,6 +686,7 @@ func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
 		EndSessionEndpoint:                        baseURL + "/oauth2/end_session",
 		RevocationEndpoint:                        baseURL + "/oauth2/revoke",
 		IntrospectionEndpoint:                     baseURL + "/oauth2/introspect",
+		RegistrationEndpoint:                      baseURL + "/oauth2/register",
 		RevocationEndpointAuthMethodsSupported:    []string{"client_secret_basic", "client_secret_post"},
 		IntrospectionEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post"},
 	}

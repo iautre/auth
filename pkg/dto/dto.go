@@ -107,9 +107,11 @@ type OAuth2AuthRequest struct {
 	ResponseType string `json:"response_type" form:"response_type" binding:"required,oneof=code"`
 	ClientID     string `json:"client_id" form:"client_id" binding:"required,min=1,max=100"`
 	RedirectURI  string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
-	Scope        string `json:"scope" form:"scope" binding:"required,min=1,max=500"`
-	State        string `json:"state" form:"state" binding:"omitempty,max=100"`
-	Nonce        string `json:"nonce" form:"nonce" binding:"omitempty,max=100"`
+	// Scope 允许留空：部分 MCP 客户端不带 scope 直接发起授权，
+	// 空值由调用方补默认集合，而不是按参数错误拒绝。
+	Scope string `json:"scope" form:"scope" binding:"omitempty,max=500"`
+	State string `json:"state" form:"state" binding:"omitempty,max=100"`
+	Nonce string `json:"nonce" form:"nonce" binding:"omitempty,max=100"`
 	// PKCE (RFC 7636)：public client 应当强制传入；S256 推荐，plain 仅作兼容。
 	CodeChallenge       string `json:"code_challenge,omitempty" form:"code_challenge" binding:"omitempty,min=43,max=128"`
 	CodeChallengeMethod string `json:"code_challenge_method,omitempty" form:"code_challenge_method" binding:"omitempty,oneof=S256 plain"`
@@ -176,6 +178,33 @@ type OAuth2ClientUpdateParams struct {
 	RefreshTokenTTL int64    `json:"refresh_token_ttl,omitempty" binding:"omitempty,min=3600"`
 }
 
+// OAuth2ClientRegistrationRequest 是 RFC 7591 动态客户端注册请求体。
+// 只接受 public client：MCP 客户端是装在用户机器上的原生程序，无法保管 secret，
+// 鉴权完全依赖 PKCE。
+type OAuth2ClientRegistrationRequest struct {
+	ClientName              string   `json:"client_name"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	Scope                   string   `json:"scope"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	SoftwareID              string   `json:"software_id,omitempty"`
+}
+
+// OAuth2ClientRegistrationResponse 为注册结果的回显，字段名遵循 RFC 7591 §3.2.1。
+// 不签发 registration_access_token，因此也没有 registration_client_uri：
+// 客户端需要变更登记信息时重新注册即可。
+type OAuth2ClientRegistrationResponse struct {
+	ClientID                string   `json:"client_id"`
+	ClientIDIssuedAt        int64    `json:"client_id_issued_at"`
+	ClientName              string   `json:"client_name"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	Scope                   string   `json:"scope"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+}
+
 // OpenID Connect (OIDC) DTOs
 type OIDCDiscoveryResponse struct {
 	Issuer                           string   `json:"issuer"`
@@ -202,6 +231,9 @@ type OIDCDiscoveryResponse struct {
 	RevocationEndpoint string `json:"revocation_endpoint"`
 	// IntrospectionEndpoint 对应 RFC 7662 的 token 内省端点。
 	IntrospectionEndpoint string `json:"introspection_endpoint"`
+	// RegistrationEndpoint 对应 RFC 7591 的动态客户端注册端点：
+	// MCP 客户端据此自助登记，不必人工在后台建 client。
+	RegistrationEndpoint string `json:"registration_endpoint,omitempty"`
 	// RevocationEndpointAuthMethodsSupported / IntrospectionEndpointAuthMethodsSupported
 	// 与 token 端点一致：Basic 与 form 两种客户端认证方式都接受。
 	RevocationEndpointAuthMethodsSupported    []string `json:"revocation_endpoint_auth_methods_supported"`

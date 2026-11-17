@@ -11,6 +11,7 @@ const (
 	OAuthErrUnauthorizedClient   = "unauthorized_client"
 	OAuthErrUnsupportedGrantType = "unsupported_grant_type"
 	OAuthErrInvalidScope         = "invalid_scope"
+	OAuthErrAccessDenied         = "access_denied"
 	OAuthErrServerError          = "server_error"
 	OAuthErrUnavailable          = "temporarily_unavailable"
 )

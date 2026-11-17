@@ -17,6 +17,7 @@ import (
 	"github.com/iautre/auth/pkg/authctx"
 	"github.com/iautre/auth/pkg/constant"
 	"github.com/iautre/gowk"
+	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // APIOptions controls where Auth's application-facing HTTP API is exposed.
@@ -32,6 +33,9 @@ type OAuthOptions struct {
 	// LoginURL is the browser login page owned by the mounting application.
 	// Empty makes anonymous authorization requests return 401 instead of redirecting.
 	LoginURL string
+	// MCPPath 是 MCP 端点路径。非空时同时暴露它的 RFC 9728 保护资源元数据，
+	// 第三方 MCP 客户端据此发现本授权服务器。
+	MCPPath string
 }
 
 // Module contains the mounted route group and middleware that host applications can
@@ -69,7 +73,13 @@ func MountAPI(router *gin.Engine, options APIOptions) *Module {
 	route.API(group)
 
 	if options.MCPPath != "" {
-		gowk.SetupMCP(router, normalizePath(options.MCPPath), mcpserver.NewProvider(), gowk.CheckLogin)
+		mcpPath := normalizePath(options.MCPPath)
+		// 线上 nginx 经 docker 网络转发（非回环），SDK 默认的 DNS rebinding 保护
+		// 不会误伤，保持开启即可。两个选项仍需显式给出——传 opts 会整体替换默认值。
+		gowk.SetupMCPWithOptions(router, mcpPath, mcpserver.NewProvider(), &mcp.StreamableHTTPOptions{
+			Stateless:                    true,
+			PropagateRequestCancellation: true,
+		}, handler.MCPAuth(mcpPath))
 	}
 
 	return &Module{
@@ -89,7 +99,7 @@ func MountOAuth(router *gin.Engine, options OAuthOptions) *Module {
 	// deliberately not mountable below an application API prefix: doing so would
 	// produce surprising paths and make issuer/discovery semantics ambiguous.
 	group := router.Group("")
-	route.OAuth(group, validateLoginURL(options.LoginURL))
+	route.OAuth(group, validateLoginURL(options.LoginURL), normalizePath(options.MCPPath))
 	return &Module{
 		Group:      group,
 		CheckLogin: gowk.CheckLogin,

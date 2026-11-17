@@ -45,7 +45,7 @@ func Setup(router *gin.Engine, options SetupOptions) *Module {
 	}
 
 	if options.OAuth {
-		MountOAuth(router, OAuthOptions{LoginURL: loginURL})
+		MountOAuth(router, OAuthOptions{LoginURL: loginURL, MCPPath: options.MCPPath})
 	}
 
 	if options.Federated {

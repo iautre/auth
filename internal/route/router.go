@@ -77,7 +77,8 @@ func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 // OAuth registers the OAuth2/OIDC authorization-server protocol surface.
 // loginURL belongs to the application that owns the browser UI. When it is
 // empty, anonymous authorization requests receive the handler's standard 401.
-func OAuth(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
+// mcpPath 非空时同时暴露该 MCP 资源的 RFC 9728 元数据，供第三方客户端发现。
+func OAuth(r *gin.RouterGroup, loginURL string, mcpPath string) *gin.RouterGroup {
 	ro := r
 	ctx := context.Background()
 	o := handler.NewOAuth2Handler(ctx)
@@ -86,7 +87,10 @@ func OAuth(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
 	// OAuth2 endpoints
 	login := handler.OAuth2BrowserLogin(loginURL)
 	ro.GET("/oauth2/authorize", login, o.OAuth2Auth)
+	ro.POST("/oauth2/authorize", login, o.OAuth2AuthDecision)
 	ro.POST("/oauth2/token", o.OIDCToken)
+	// RFC 7591 动态客户端注册：MCP 客户端自助登记，不必人工建 client。
+	ro.POST("/oauth2/register", o.OAuth2Register)
 	// RFC 7009 撤销、RFC 7662 内省：供接入方主动失效与校验 token。
 	ro.POST("/oauth2/revoke", o.OAuth2Revoke)
 	ro.POST("/oauth2/introspect", o.OAuth2Introspect)
@@ -97,6 +101,13 @@ func OAuth(r *gin.RouterGroup, loginURL string) *gin.RouterGroup {
 	ro.GET("/.well-known/openid-configuration", o.OIDCDiscovery)
 	ro.GET("/oidc/userinfo", handler.OAuth2TokenMiddleware, o.OIDCUserInfo)
 	ro.GET("/oidc/jwks", o.OIDCJwks)
+
+	// RFC 9728 保护资源元数据：客户端在 /mcp 收到 401 后按这里的地址来找授权服务器。
+	// 根路径那份描述"整个服务"，带路径那份精确描述 MCP 资源，两者都给出。
+	if mcpPath != "" {
+		ro.GET("/.well-known/oauth-protected-resource", handler.ProtectedResourceMetadata(""))
+		ro.GET(handler.ProtectedResourceMetadataPath(mcpPath), handler.ProtectedResourceMetadata(mcpPath))
+	}
 
 	// OAuth2 Client Management endpoints (admin only)
 	// 鉴权用平台登录态而非 OAuth2 access token：access token 必须先存在 client
