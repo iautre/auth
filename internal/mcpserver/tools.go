@@ -30,7 +30,11 @@ func (s *Server) oidcDiscovery(_ context.Context, _ *mcp.CallToolRequest, _ stru
 }
 
 func (s *Server) oidcJwks(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, jsonOut, error) {
-	out, err := wrap(service.DefaultOIDCService().GetJwks(ctx))
+	jwks, err := service.DefaultOIDCService().GetJwks(ctx)
+	if err != nil {
+		return nil, jsonOut{}, err
+	}
+	out, err := wrap(jwks)
 	return nil, out, err
 }
 

@@ -585,23 +585,6 @@ func (o *OAuth2Service) ValidateAccessToken(ctx context.Context, accessToken str
 	return &oauth2Token, nil
 }
 
-// SSO Service
-type SSOService struct{}
-
-// ErrSSONotImplemented 表示第三方 SSO 登录接口尚未实现。Handler 层应据此返回 501。
-var ErrSSONotImplemented = errors.New("sso login is not implemented")
-
-// LoginWithProvider 当前未实现真实的第三方 SSO 登录。
-// 接入真实 provider（Google/GitHub/WeChat 等）时，需要：
-//  1. 使用 provider 的 OAuth2 token endpoint 换取 access_token；
-//  2. 使用该 access_token 调用 provider userinfo 获取唯一身份标识；
-//  3. 在 auth_user 表匹配/建联本地账号，并签发本地会话 token（gowk.Login）。
-//
-// 在未实现前拒绝，避免被滥用签发无主 token。
-func (s *SSOService) LoginWithProvider(ctx context.Context, req *dto.SSOLoginRequest) (*dto.SSOLoginResponse, error) {
-	return nil, ErrSSONotImplemented
-}
-
 // OIDCService OIDC Service
 type OIDCService struct {
 	BaseService
@@ -636,6 +619,14 @@ func (o *OIDCService) GetDiscoveryDocument() *dto.OIDCDiscoveryResponse {
 		GrantTypesSupported:              []string{"authorization_code", "refresh_token", "client_credentials"},
 		SubjectTypesSupported:            []string{"public"},
 		IDTokenSigningAlgValuesSupported: []string{"RS256"},
+		// /oauth2/token 同时接受 form 参数与 HTTP Basic 两种客户端认证方式。
+		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post"},
+		// 授权端点受理 S256 与 plain 两种 PKCE 变换。
+		CodeChallengeMethodsSupported: []string{"S256", "plain"},
+		ClaimsSupported: []string{
+			"sub", "name", "preferred_username", "email", "email_verified",
+			"phone_number", "phone_number_verified", "picture", "updated_at",
+		},
 	}
 }
 
@@ -857,11 +848,16 @@ func parseRSAPrivateKeyPEM(pemStr string) (*rsa.PrivateKey, error) {
 
 // GetJwks 从数据库读取 JWK，只暴露公钥字段（n/e），不暴露 private_key。
 // 使用调用方 ctx，确保查询能被请求级别的取消/超时正确传播。
-func (o *OIDCService) GetJwks(ctx context.Context) *dto.OIDCJwksResponse {
+func (o *OIDCService) GetJwks(ctx context.Context) (*dto.OIDCJwksResponse, error) {
+	// 数据库不可用时 gowk.DB 返回 nil，db2.New(nil) 后续查询会空指针 panic。
+	// 这里显式返回错误，让调用方回 503；返回空 keys 会让客户端误判"密钥集为空"。
+	if gowk.DB(ctx) == nil {
+		return nil, errors.New("database unavailable")
+	}
 	jwks, err := o.getQueries(ctx).GetActiveOIDCJwks(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "list jwks failed", "err", err)
-		return &dto.OIDCJwksResponse{Keys: []dto.OIDCJwk{}}
+		return nil, err
 	}
 
 	keys := make([]dto.OIDCJwk, 0, len(jwks))
@@ -875,7 +871,7 @@ func (o *OIDCService) GetJwks(ctx context.Context) *dto.OIDCJwksResponse {
 			Alg: jwk.Alg,
 		})
 	}
-	return &dto.OIDCJwksResponse{Keys: keys}
+	return &dto.OIDCJwksResponse{Keys: keys}, nil
 }
 
 // phoneRe 提前编译；regexp.MatchString 每次重编译会显著影响登录热路径。

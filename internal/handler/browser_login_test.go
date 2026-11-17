@@ -61,7 +61,7 @@ func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 	store := &testTokenStore{}
 	gowk.SetTokenHandler(store)
 	router := gin.New()
-	router.GET("/api/auth/login", OIDCLoginPageFor("/oauth2/authorize", "/oauth2/auth"))
+	router.GET("/api/auth/login", OIDCLoginPageFor("/oauth2/authorize"))
 
 	validRecorder := httptest.NewRecorder()
 	validRequest := httptest.NewRequest(http.MethodGet, "/api/auth/login?return_to=%2Foauth2%2Fauthorize%3Fclient_id%3Dnewapi", nil)
@@ -191,5 +191,100 @@ func TestAccountPageRedirectsAnonymousAndRendersForSession(t *testing.T) {
 		if strings.Contains(authenticatedRecorder.Body.String(), forbidden) {
 			t.Fatalf("account page still uses native browser dialog %q", forbidden)
 		}
+	}
+}
+
+// 直接打开登录页（没有 return_to）时曾因空值被判非法而回 400，
+// 导致浏览器访问 auth 域名根本登录不了。空值应回退到账号中心。
+func TestBrowserLoginPageDefaultsEmptyReturnToAccountPage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gowk.SetTokenHandler(&testTokenStore{})
+
+	router := gin.New()
+	router.GET("/api/auth/login", OIDCLoginPageFor("/oauth2/authorize"))
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/auth/login", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	if body := recorder.Body.String(); !strings.Contains(body, `data-return-to="/api/auth/account"`) {
+		t.Fatal("空 return_to 没有回退到账号中心")
+	}
+}
+
+// 页面下的接口路径由登录页所在路由前缀推导。挂在非 /login 结尾的路径上时，
+// 旧实现（TrimSuffix "/login"）会拼出 /signin/account、/signin/passkey 这种
+// 并不存在的地址，页面所有接口都会 404。
+func TestBrowserLoginPageDerivesPathsFromAnyRoutePath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gowk.SetTokenHandler(&testTokenStore{})
+
+	router := gin.New()
+	router.GET("/signin", BrowserLoginPage(BrowserLoginPageOptions{}))
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/signin", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", recorder.Code)
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`data-return-to="/account"`,
+		`data-passkey-status-path="/passkey/status"`,
+		`data-passkey-credentials-path="/passkey/credentials"`,
+		`data-passkey-login-begin-path="/passkey/login/begin"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("自定义登录路径未推导出 %q", want)
+		}
+	}
+	for _, forbidden := range []string{"/signin/account", "/signin/passkey"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("仍然拼出了不存在的路径 %q", forbidden)
+		}
+	}
+}
+
+// 未显式传 AuthorizationPaths 时，默认白名单必须是根路径的 /oauth2/authorize；
+// 旧实现拼成 {prefix}/oauth2/auth，与任何实际路由都对不上。
+func TestBrowserLoginPageFallsBackToStandardAuthorizationPath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	gowk.SetTokenHandler(&testTokenStore{})
+
+	router := gin.New()
+	router.GET("/api/auth/login", BrowserLoginPage(BrowserLoginPageOptions{}))
+
+	accepted := httptest.NewRecorder()
+	router.ServeHTTP(accepted, httptest.NewRequest(http.MethodGet,
+		"/api/auth/login?return_to=%2Foauth2%2Fauthorize%3Fclient_id%3Dnewapi", nil))
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("默认白名单拒绝了 /oauth2/authorize，status = %d", accepted.Code)
+	}
+
+	rejected := httptest.NewRecorder()
+	router.ServeHTTP(rejected, httptest.NewRequest(http.MethodGet,
+		"/api/auth/login?return_to=%2Fapi%2Fauth%2Foauth2%2Fauth", nil))
+	if rejected.Code != http.StatusBadRequest {
+		t.Fatalf("旧拼法 /api/auth/oauth2/auth 应被拒，status = %d", rejected.Code)
+	}
+}
+
+func TestValidAuthorizationReturnToRejectsUnsafeValues(t *testing.T) {
+	for _, raw := range []string{
+		"",
+		"/evil",
+		"https://evil.example/",
+		"//evil.example/",
+		"/oauth2/authorize#fragment",
+	} {
+		if validAuthorizationReturnTo(raw, "/oauth2/authorize") {
+			t.Fatalf("%q 不应通过校验", raw)
+		}
+	}
+	if !validAuthorizationReturnTo("/oauth2/authorize?client_id=1", "/oauth2/authorize") {
+		t.Fatal("带 query 的授权地址应通过校验")
 	}
 }

@@ -69,10 +69,8 @@ func TestMountOAuthRegistersProtocolRoutesAndDiscovery(t *testing.T) {
 
 	want := map[string]bool{
 		"GET /oauth2/authorize":                      false,
-		"GET /oauth2/auth":                           false,
 		"POST /oauth2/token":                         false,
 		"GET /.well-known/openid-configuration":      false,
-		"POST /oidc/token":                           false,
 		"GET /oidc/userinfo":                         false,
 		"GET /oidc/jwks":                             false,
 		"POST /oauth2/clients":                       false,

@@ -1,0 +1,47 @@
+package authhttp
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/iautre/auth/internal/handler"
+)
+
+// SetupOptions 描述一次完整的 Auth 挂载。
+type SetupOptions struct {
+	// APIPrefix 是业务 API 的前缀，空表示挂在根路径。
+	APIPrefix string
+	// MCPPath 挂载 Auth 的 MCP 端点，空表示关闭。
+	MCPPath string
+	// OAuth 为真时同时挂载 OAuth2/OIDC 协议端点（固定根路径）。
+	OAuth bool
+	// LoginURL 是 OAuth 无会话时浏览器跳转的登录页，必须是同源相对路径。
+	// 留空且 Pages 为真时推导为 {APIPrefix}/login；Pages 也为假则不做跳转，直接返回 401。
+	LoginURL string
+	// Pages 为真时注册 Auth 自带的登录页与账号中心，挂在 {APIPrefix} 下。
+	Pages bool
+}
+
+// Setup 一次性挂载 Auth：业务 API 始终挂载，协议端点与内置页面按开关决定。
+// 返回的 Module 提供中间件，供宿主在自己的业务路由上复用。
+func Setup(router *gin.Engine, options SetupOptions) *Module {
+	module := MountAPI(router, APIOptions{
+		Prefix:  options.APIPrefix,
+		MCPPath: options.MCPPath,
+	})
+
+	prefix := normalizePath(options.APIPrefix)
+	loginURL := options.LoginURL
+	if loginURL == "" && options.Pages {
+		loginURL = prefix + "/login"
+	}
+
+	if options.OAuth {
+		MountOAuth(router, OAuthOptions{LoginURL: loginURL})
+	}
+
+	if options.Pages {
+		module.Group.GET("/login", handler.OIDCLoginPageFor("/oauth2/authorize"))
+		module.Group.GET("/account", handler.OAuth2BrowserLogin(loginURL), handler.AccountPage)
+	}
+
+	return module
+}

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -46,6 +47,10 @@ type accountPageData struct {
 	PasskeyRegisterFinishPath string
 }
 
+// defaultAuthorizationPath 是 OAuth2 授权端点的根路径。协议端点由
+// authhttp.MountOAuth 挂在根路径下，不跟随业务 API 前缀，因此与登录页路径无关。
+const defaultAuthorizationPath = "/oauth2/authorize"
+
 // BrowserLoginPageOptions controls Auth's standalone browser login page.
 type BrowserLoginPageOptions struct {
 	AuthorizationPaths []string
@@ -58,12 +63,17 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		loginPath := ctx.Request.URL.Path
 		returnTo := ctx.Query("return_to")
-		accountPath := strings.TrimSuffix(loginPath, "/login") + "/account"
+		basePath := pageBasePath(loginPath)
+		accountPath := basePath + "/account"
 		authorizationPaths := options.AuthorizationPaths
 		if len(authorizationPaths) == 0 {
-			authorizationPaths = []string{authorizationPath(loginPath)}
+			authorizationPaths = []string{defaultAuthorizationPath}
 		}
 		allowedReturnPaths := append(append([]string{}, authorizationPaths...), accountPath)
+		if returnTo == "" {
+			// 直接打开登录页（非 OIDC 跳转）时没有回跳目标，登录后进账号中心。
+			returnTo = accountPath
+		}
 		validReturnTo := validAuthorizationReturnTo(returnTo, allowedReturnPaths...)
 		if !validReturnTo {
 			ctx.String(http.StatusBadRequest, "invalid return_to")
@@ -71,7 +81,7 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 		}
 
 		setBrowserPageHeaders(ctx)
-		passkeyPath := strings.TrimSuffix(loginPath, "/login") + "/passkey"
+		passkeyPath := basePath + "/passkey"
 		showAccountLink := options.ShowAccountLink && browserSessionUserID(ctx) > 0
 		if err := browserPageTemplate.ExecuteTemplate(ctx.Writer, "login.html", loginPageData{
 			LoginPath:                 loginPath,
@@ -89,10 +99,6 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 			ctx.Error(err)
 		}
 	}
-}
-
-func OIDCLoginPage(ctx *gin.Context) {
-	OIDCLoginPageFor()(ctx)
 }
 
 // OIDCLoginPageFor builds Auth's standalone login page and allows it to return
@@ -177,12 +183,20 @@ func browserSessionUserID(ctx *gin.Context) int64 {
 	return gowk.LoginId(probe)
 }
 
-func authorizationPath(loginPath string) string {
-	return strings.TrimSuffix(loginPath, "/login") + "/oauth2/auth"
+// pageBasePath 返回浏览器页面所在的路由前缀。页面自身调用的接口都挂在这个
+// 前缀下：/api/auth/login -> /api/auth，/login 与 /signin -> ""。
+// 用 path.Dir 而不是 TrimSuffix("/login")，登录页挂在任意路径都能得到正确前缀，
+// 不会静默拼出 /signin/account 这类并不存在的地址。
+func pageBasePath(pagePath string) string {
+	base := path.Dir(strings.TrimSuffix(pagePath, "/"))
+	if base == "/" || base == "." {
+		return ""
+	}
+	return base
 }
 
 func validAuthorizationReturnTo(raw string, expectedPaths ...string) bool {
-	if raw == "" || !strings.HasPrefix(raw, "/") {
+	if !strings.HasPrefix(raw, "/") {
 		return false
 	}
 	parsed, err := url.ParseRequestURI(raw)

@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"errors"
+	"encoding/base64"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -52,58 +52,6 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 	}, nil)
 }
 
-func (u *UserHandler) BasicAuthMiddleware(ctx *gin.Context) {
-	err := u.validateBasicAuth(ctx)
-	if err != nil {
-		u.requireBasicAuth(ctx)
-		return
-	}
-	// 验证通过（实际场景）
-	ctx.Next()
-}
-
-func (u *UserHandler) requireBasicAuth(ctx *gin.Context) {
-	// Set WWW-Authenticate header (required)
-	ctx.Header("WWW-Authenticate", `Basic realm="Authentication required"`)
-	// Return 401 Unauthorized status code (required)
-	gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError("Authentication required"))
-}
-
-func (u *UserHandler) validateBasicAuth(ctx *gin.Context) error {
-	auth := ctx.GetString(gowk.ContextBasicAuthKey)
-	if auth == "" {
-		return nil
-	}
-	// Split username and password
-	parts := strings.SplitN(auth, ":", 2)
-	if len(parts) != 2 {
-		return gowk.NewError("invalid credentials format")
-	}
-
-	username := parts[0]
-	password := parts[1]
-
-	// Validate username and password
-	if username == "" || password == "" {
-		return gowk.NewError("username and password cannot be empty")
-	}
-	params := &dto.LoginParams{
-		Account: username,
-		Code:    password,
-	}
-	// Query user from database and validate credentials
-	var userService service.UserService
-	user, err := userService.Login(ctx, params)
-	if err != nil {
-		return err // Return the actual error from Login method
-	}
-	_, err = gowk.Login(ctx, user.ID)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (u *UserHandler) UserInfo(ctx *gin.Context) {
 	userId := gowk.LoginId(ctx)
 	var userService service.UserService
@@ -114,26 +62,6 @@ func (u *UserHandler) UserInfo(ctx *gin.Context) {
 	}
 
 	gowk.Response(ctx, http.StatusOK, userResponse(user), nil)
-}
-
-// SSOLogin 暂未实现，明确返回 501 以避免下游误以为可用。
-func (u *UserHandler) SSOLogin(ctx *gin.Context) {
-	var params dto.SSOLoginRequest
-	if err := ctx.ShouldBind(&params); err != nil {
-		gowk.Response(ctx, http.StatusBadRequest, nil, err)
-		return
-	}
-	var ssoService service.SSOService
-	response, err := ssoService.LoginWithProvider(ctx, &params)
-	if err != nil {
-		if errors.Is(err, service.ErrSSONotImplemented) {
-			gowk.Response(ctx, http.StatusNotImplemented, nil, err)
-			return
-		}
-		gowk.Response(ctx, http.StatusBadRequest, nil, err)
-		return
-	}
-	gowk.Response(ctx, http.StatusOK, response, nil)
 }
 
 // ResetOTPCode generates new OTP secret for user (admin only)
@@ -177,9 +105,9 @@ func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
 		return
 	}
 
-	// 取登录用户 ID。前置中间件 gowk.CheckLogin / BasicAuthMiddleware 已经把
-	// 已认证用户写入 ContextLoginIdKey；但当这些中间件存在某些"静默放行"路径时，
-	// LoginId 可能是 0。无主授权码会让攻击者用 sub=0 换 token，必须在此再设一道闸：
+	// 取登录用户 ID。前置中间件 gowk.CheckLogin 已经把已认证用户写入
+	// ContextLoginIdKey；但其存在某些"静默放行"路径时 LoginId 可能是 0。
+	// 无主授权码会让攻击者用 sub=0 换 token，必须在此再设一道闸：
 	// 没有有效用户身份直接 401，由前端跳转到登录页。
 	userID := gowk.LoginId(ctx)
 	if userID <= 0 {
@@ -228,30 +156,23 @@ func (o *OAuth2Handler) OAuth2Auth(ctx *gin.Context) {
 	ctx.Redirect(http.StatusFound, redirectURL.String())
 }
 
-func (o *OAuth2Handler) OAuth2Token(ctx *gin.Context) {
-	var params dto.OAuth2TokenRequest
-	err := ctx.ShouldBind(&params)
-	if err != nil {
-		gowk.Response(ctx, http.StatusBadRequest, nil, err)
-		return
-	}
-
-	// Use unified ExchangeToken method
-	response, err := o.oauth2Service.ExchangeToken(ctx, &params)
-	if err != nil {
-		gowk.Response(ctx, http.StatusBadRequest, nil, err)
-		return
-	}
-	gowk.Response(ctx, http.StatusOK, response, nil)
-}
-
 // OIDCToken 返回 RFC 6749/OIDC 客户端预期的顶层 token 字段。
 func (o *OAuth2Handler) OIDCToken(ctx *gin.Context) {
+	// token 响应携带凭据，禁止任何中间层缓存（RFC 6749 §5.1）。
+	ctx.Header("Cache-Control", "no-store")
+	ctx.Header("Pragma", "no-cache")
+
 	var params dto.OAuth2TokenRequest
 	if err := ctx.ShouldBind(&params); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid_request", "error_description": err.Error()})
 		ctx.Abort()
 		return
+	}
+
+	// 机密客户端可用 client_secret_basic 提交凭据；与 form 参数同时出现时以 Basic 为准。
+	if clientID, clientSecret, ok := parseBasicAuth(ctx.GetHeader("Authorization")); ok {
+		params.ClientID = clientID
+		params.ClientSecret = clientSecret
 	}
 
 	response, err := o.oauth2Service.ExchangeToken(ctx, &params)
@@ -262,6 +183,33 @@ func (o *OAuth2Handler) OIDCToken(ctx *gin.Context) {
 	}
 	ctx.JSON(http.StatusOK, response)
 	ctx.Abort()
+}
+
+// parseBasicAuth 解析 client_secret_basic（RFC 6749 §2.3.1）。
+//
+// 凭据在放入 Basic 头之前经过 application/x-www-form-urlencoded 编码，这里还原后再比对；
+// 按第一个冒号切分，允许 secret 内含冒号。头缺失或格式不合法时返回 ok=false，
+// 调用方回落到 form 参数。
+func parseBasicAuth(header string) (clientID, clientSecret string, ok bool) {
+	after, found := strings.CutPrefix(header, "Basic ")
+	if !found {
+		return "", "", false
+	}
+	raw, err := base64.StdEncoding.DecodeString(after)
+	if err != nil {
+		return "", "", false
+	}
+	name, pass, found := strings.Cut(string(raw), ":")
+	if !found {
+		return "", "", false
+	}
+	if clientID, err = url.QueryUnescape(name); err != nil {
+		return "", "", false
+	}
+	if clientSecret, err = url.QueryUnescape(pass); err != nil {
+		return "", "", false
+	}
+	return clientID, clientSecret, true
 }
 
 func (o *OAuth2Handler) OIDCDiscovery(ctx *gin.Context) {
@@ -298,7 +246,12 @@ func (o *OAuth2Handler) OIDCUserInfo(ctx *gin.Context) {
 }
 
 func (o *OAuth2Handler) OIDCJwks(ctx *gin.Context) {
-	jwks := o.oidcService.GetJwks(ctx.Request.Context())
+	jwks, err := o.oidcService.GetJwks(ctx.Request.Context())
+	if err != nil {
+		ctx.JSON(http.StatusServiceUnavailable, gin.H{"error": "temporarily_unavailable", "error_description": err.Error()})
+		ctx.Abort()
+		return
+	}
 	ctx.JSON(http.StatusOK, jwks)
 	ctx.Abort()
 }

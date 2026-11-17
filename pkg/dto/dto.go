@@ -130,22 +130,6 @@ type OAuth2ClientUpdateParams struct {
 	RefreshTokenTTL int64    `json:"refresh_token_ttl,omitempty" binding:"omitempty,min=3600"`
 }
 
-// SSO DTOs
-type SSOLoginRequest struct {
-	// Provider 仅要求非空，具体 provider 合法性由服务端自行校验，避免后续新增时需要同步修改 binding tag。
-	Provider    string `json:"provider" form:"provider" binding:"required,min=1,max=32"`
-	Token       string `json:"token" form:"token" binding:"required,min=10,max=1000"`
-	RedirectURI string `json:"redirect_uri" form:"redirect_uri" binding:"required,url"`
-	State       string `json:"state" form:"state" binding:"omitempty,max=100"`
-}
-
-type SSOLoginResponse struct {
-	Token    string `json:"token"`
-	UserId   int64  `json:"userId"`
-	Nickname string `json:"nickname"`
-	Provider string `json:"provider"`
-}
-
 // OpenID Connect (OIDC) DTOs
 type OIDCDiscoveryResponse struct {
 	Issuer                           string   `json:"issuer"`
@@ -158,6 +142,14 @@ type OIDCDiscoveryResponse struct {
 	GrantTypesSupported              []string `json:"grant_types_supported"`
 	SubjectTypesSupported            []string `json:"subject_types_supported"`
 	IDTokenSigningAlgValuesSupported []string `json:"id_token_signing_alg_values_supported"`
+	// TokenEndpointAuthMethodsSupported 告知客户端可用的客户端认证方式：
+	// client_secret_basic 与 client_secret_post。缺省时标准客户端会按规范默认
+	// 只用 client_secret_basic，导致仅配置 form 凭据的接入失败。
+	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
+	// CodeChallengeMethodsSupported 告知支持的 PKCE 变换方法。
+	CodeChallengeMethodsSupported []string `json:"code_challenge_methods_supported"`
+	// ClaimsSupported 声明 userinfo / id_token 可返回的 claims。
+	ClaimsSupported []string `json:"claims_supported"`
 }
 
 type OIDCAddress struct {

@@ -4,6 +4,7 @@ package authhttp
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -11,7 +12,10 @@ import (
 	"github.com/iautre/auth/internal/handler"
 	"github.com/iautre/auth/internal/mcpserver"
 	"github.com/iautre/auth/internal/route"
+	"github.com/iautre/auth/internal/service"
 	"github.com/iautre/auth/migrations"
+	"github.com/iautre/auth/pkg/authctx"
+	"github.com/iautre/auth/pkg/constant"
 	"github.com/iautre/gowk"
 )
 
@@ -23,9 +27,6 @@ type APIOptions struct {
 	MCPPath string
 }
 
-// Options is kept as a source-compatible alias for callers migrating from Mount.
-type Options = APIOptions
-
 // OAuthOptions controls the optional OAuth2/OIDC authorization-server surface.
 type OAuthOptions struct {
 	// LoginURL is the browser login page owned by the mounting application.
@@ -36,8 +37,13 @@ type OAuthOptions struct {
 // Module contains the mounted route group and middleware that host applications can
 // reuse on their own business routes.
 type Module struct {
-	Group      *gin.RouterGroup
+	Group *gin.RouterGroup
+	// CheckLogin 只校验 token 并把登录 ID 写入 gowk.ContextLoginIdKey，不查库。
 	CheckLogin gin.HandlerFunc
+	// UserAuth 在 CheckLogin 之上按登录 ID 查出用户，并写入 authctx.ContextUserKey，
+	// 供业务代码用 authctx.ContextUser(ctx) 取 Id / Nickname / Group。
+	UserAuth gin.HandlerFunc
+	// CheckAdmin 要求当前用户属于管理员组。
 	CheckAdmin gin.HandlerFunc
 }
 
@@ -65,14 +71,9 @@ func MountAPI(router *gin.Engine, options APIOptions) *Module {
 	return &Module{
 		Group:      group,
 		CheckLogin: gowk.CheckLogin,
+		UserAuth:   userAuth,
 		CheckAdmin: handler.AdminMiddleware,
 	}
-}
-
-// Mount is the compatibility name for MountAPI. New callers should use
-// MountAPI so it is explicit that OAuth/OIDC protocol routes are not included.
-func Mount(router *gin.Engine, options Options) *Module {
-	return MountAPI(router, options)
 }
 
 // MountOAuth explicitly enables the OAuth2/OIDC authorization-server surface.
@@ -88,8 +89,32 @@ func MountOAuth(router *gin.Engine, options OAuthOptions) *Module {
 	return &Module{
 		Group:      group,
 		CheckLogin: gowk.CheckLogin,
+		UserAuth:   userAuth,
 		CheckAdmin: handler.AdminMiddleware,
 	}
+}
+
+// userAuth 把登录 ID 解析成用户对象写入上下文。
+// 前置的 CheckLogin 只负责验 token，不查库；需要昵称/分组等信息的业务路由在此之后取用。
+func userAuth(ctx *gin.Context) {
+	loginId := gowk.LoginId(ctx)
+	if loginId <= 0 {
+		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError(constant.ErrAuthRequired))
+		return
+	}
+
+	var userService service.UserService
+	user, err := userService.GetById(ctx, loginId)
+	if err != nil {
+		gowk.Response(ctx, http.StatusUnauthorized, nil, gowk.NewError(constant.ErrInvalidToken))
+		return
+	}
+
+	ctx.Set(authctx.ContextUserKey, &authctx.User{
+		Id:       user.ID,
+		Nickname: user.Nickname.String,
+		Group:    user.Group.String,
+	})
 }
 
 func validateLoginURL(raw string) string {
