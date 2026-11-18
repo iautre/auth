@@ -1,4 +1,4 @@
-FROM golang:1.27.4-alpine AS go-builder
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS go-builder
 
 # auth 使用远程 gowk（go.mod 中的版本，经 GOPROXY 拉取），不再依赖本地 ../gowk 源码。
 # 构建上下文即 auth 自身目录（见 Makefile），不依赖项目所在位置/父目录。
@@ -12,7 +12,10 @@ RUN set -x \
 
 ENV CGO_ENABLED=0
 ENV GOOS=linux
-ENV GOARCH=amd64
+# buildx 交叉编译：builder 固定在原生架构（BUILDPLATFORM），目标架构由 TARGETARCH 注入。
+# 本地普通 docker build 无 TARGETARCH 时回退 amd64，行为与改动前一致。
+ARG TARGETARCH
+ENV GOARCH=${TARGETARCH:-amd64}
 ENV GOPROXY=https://goproxy.cn,direct
 
 # 构建版本注入 gowk.Version（默认 beta，由 Makefile --build-arg 传入 git 版本）

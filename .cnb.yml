@@ -1,0 +1,22 @@
+# 仅由本地 `make cnb-build` 通过 api_trigger 事件触发，push 不自动构建。
+# 构建 amd64 + arm64 双架构镜像，推送到 CNB 制品库（latest + sha-<commit>）。
+main:
+  api_trigger:
+    - name: build and push multi-arch image
+      services:
+        - docker
+      stages:
+        - name: set image tags
+          script: |
+            echo -n "${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:sha-${CNB_COMMIT_SHORT}"
+          exports:
+            info: IMAGE_TAGS
+        - name: setup buildx
+          script: docker buildx create --use
+        - name: build and push
+          script: |
+            TAG_ARGS=""
+            for tag in $IMAGE_TAGS; do
+              TAG_ARGS="$TAG_ARGS -t $tag"
+            done
+            docker buildx build --platform linux/amd64,linux/arm64 $TAG_ARGS --push .

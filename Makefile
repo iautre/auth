@@ -19,7 +19,7 @@ else
 PUSH := docker push
 endif
 
-.PHONY: sqlc generate clean build build-image push help deploy restart logs stop migrate run install-tools check-tools check-server
+.PHONY: sqlc generate clean build build-image push cnb-build help deploy restart logs stop migrate run install-tools check-tools check-server
 
 # Default target
 help:
@@ -84,6 +84,12 @@ build-image:
 push:
 	$(PUSH) $(IMG):latest
 
+# 本地触发 CNB 云端构建（双架构 amd64+arm64）并等待完成，再交给 restart 拉取部署。
+# CNB_BUILD_TOKEN 在 .env 配置（个人访问令牌，需 repo-cnb-trigger:rw 权限）。
+cnb-build:
+	@test -n "$(CNB_BUILD_TOKEN)" || { echo "❌ 请设置环境变量 CNB_BUILD_TOKEN"; exit 1; }
+	@bash scripts/cnb-build.sh
+
 # Run server（端口走环境变量 HTTP_SERVER_ADDR）
 run: build
 	@echo "Starting HTTP server..."
@@ -93,8 +99,8 @@ run: build
 check-server:
 	@test -n "$(SERVER)" || { echo "❌ DEPLOY_HOST 未设置：在 .env 里加一行 DEPLOY_HOST=user@host"; exit 1; }
 
-## 构建 → 推送 cnb → 服务器拉取并重启（一键部署）
-deploy: build-image push restart
+## 触发 CNB 云端构建（双架构）→ 等待成功 → 服务器拉取并重启（一键部署）
+deploy: cnb-build restart
 
 ## 服务器拉取最新镜像并重启容器（私有仓库需服务器先 docker login docker.cnb.cool）
 ## 敏感项（AUTH_ENCRYPTION_KEY / AUTH_SMTP_*）不放命令行走 shell，改由服务器上的
