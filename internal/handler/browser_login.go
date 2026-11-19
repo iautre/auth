@@ -153,7 +153,7 @@ func AccountPage(ctx *gin.Context) {
 
 func setBrowserPageHeaders(ctx *gin.Context) {
 	ctx.Header("Cache-Control", "no-store")
-	ctx.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+	ctx.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self' https: http:; base-uri 'none'; frame-ancestors 'none'")
 	ctx.Header("X-Content-Type-Options", "nosniff")
 	ctx.Header("Referrer-Policy", "no-referrer")
 	ctx.Header("Content-Type", "text/html; charset=utf-8")
