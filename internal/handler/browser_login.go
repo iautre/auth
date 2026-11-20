@@ -91,6 +91,13 @@ func BrowserLoginPage(options BrowserLoginPageOptions) gin.HandlerFunc {
 			return
 		}
 
+		// 已登录时不再渲染登录表单：直接回到目标页（默认账号中心）。
+		// 走 OIDC 授权跳转时，这样能免掉一次重复登录，由 authorize 直接签 code。
+		if browserSessionUserID(ctx) > 0 {
+			ctx.Redirect(http.StatusFound, returnTo)
+			return
+		}
+
 		setBrowserPageHeaders(ctx)
 		passkeyPath := basePath + "/passkey"
 		showAccountLink := options.ShowAccountLink && browserSessionUserID(ctx) > 0

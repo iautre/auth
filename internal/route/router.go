@@ -71,6 +71,13 @@ func API(r *gin.RouterGroup, relativePath ...string) *gin.RouterGroup {
 	// Admin endpoints (require admin middleware)
 	ro.POST("/user/:userId/reset-otp", gowk.CheckLogin, handler.AdminMiddleware, u.ResetOTPCode)
 
+	// 系统设置：注册开关与用户管理，只有管理员能读写。
+	// 路径避开页面 /admin/settings，否则同前缀下会与页面路由冲突。
+	ro.GET("/admin/config", gowk.CheckLogin, handler.AdminMiddleware, handler.GetSettings)
+	ro.PUT("/admin/config", gowk.CheckLogin, handler.AdminMiddleware, handler.BrowserSameOrigin, handler.UpdateSettings)
+	ro.GET("/admin/users", gowk.CheckLogin, handler.AdminMiddleware, handler.ListUsers)
+	ro.PATCH("/admin/users/:id", gowk.CheckLogin, handler.AdminMiddleware, handler.BrowserSameOrigin, handler.UpdateUser)
+
 	return ro
 }
 

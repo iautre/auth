@@ -106,11 +106,11 @@ func TestOIDCLoginPageOnlyAcceptsAllowedReturnPaths(t *testing.T) {
 	authenticatedRequest := httptest.NewRequest(http.MethodGet, "/api/auth/login?return_to=%2Foauth2%2Fauthorize%3Fclient_id%3Dnewapi", nil)
 	authenticatedRequest.AddCookie(&http.Cookie{Name: "oidc_jwt", Value: "login-page-session"})
 	router.ServeHTTP(authenticatedRecorder, authenticatedRequest)
-	if authenticatedRecorder.Code != http.StatusOK {
-		t.Fatalf("authenticated login page status = %d, want 200", authenticatedRecorder.Code)
+	if authenticatedRecorder.Code != http.StatusFound {
+		t.Fatalf("authenticated login page status = %d, want 302", authenticatedRecorder.Code)
 	}
-	if !strings.Contains(authenticatedRecorder.Body.String(), `href="/api/auth/account"`) {
-		t.Fatal("authenticated login page is missing account management link")
+	if location := authenticatedRecorder.Header().Get("Location"); location != "/oauth2/authorize?client_id=newapi" {
+		t.Fatalf("authenticated login page redirected to %q, want return_to", location)
 	}
 	for _, forbidden := range []string{"window.prompt", "window.confirm", "window.alert"} {
 		if strings.Contains(validRecorder.Body.String(), forbidden) {

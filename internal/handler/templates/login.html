@@ -121,6 +121,7 @@
     .tab {
       flex: 1;
       height: 38px;
+      margin-top: 0;
       padding: 0 8px;
       border: 0;
       border-radius: 9px;
@@ -200,8 +201,8 @@
     </div>
 
     <form id="login-form">
-      <label for="account">手机号</label>
-      <input id="account" name="account" type="tel" autocomplete="username" inputmode="tel" required autofocus>
+      <label for="account">手机号/邮箱</label>
+      <input id="account" name="account" type="text" autocomplete="username" placeholder="手机号或邮箱" required autofocus>
       <label for="code">动态验证码</label>
       <input id="code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" required>
       <button id="submit" type="submit">登录并继续</button>

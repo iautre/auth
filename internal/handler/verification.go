@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/iautre/auth/internal/config"
 	"github.com/iautre/auth/internal/service"
 	"github.com/iautre/auth/pkg/dto"
 	"github.com/iautre/gowk"
@@ -37,7 +36,7 @@ func (h *AuthHandler) LoginWithCode(ctx *gin.Context) {
 	}
 
 	var userService service.UserService
-	user, err := userService.LoginWithCode(ctx, params.Target, params.Code, config.AutoRegister())
+	user, err := userService.LoginWithCode(ctx, params.Target, params.Code, service.RegistrationOpen(ctx))
 	if err != nil {
 		writeAuthError(ctx, err)
 		return

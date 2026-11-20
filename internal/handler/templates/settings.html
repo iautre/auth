@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系统设置</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f6f8;
+      color: #18212f;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      padding: 32px 24px 64px;
+      background:
+        radial-gradient(circle at 12% 8%, rgba(68, 112, 255, .13), transparent 30%),
+        radial-gradient(circle at 88% 82%, rgba(36, 194, 151, .1), transparent 28%),
+        #f4f6f8;
+    }
+    .wrap { width: min(100%, 980px); margin: 0 auto; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+    .sub { margin: 6px 0 0; color: #667085; font-size: 14px; }
+    .tabs { display: flex; gap: 4px; padding: 4px; margin-bottom: 18px; border-radius: 12px; background: #eef1f6; }
+    .tabs button {
+      flex: 1;
+      height: 40px;
+      margin: 0;
+      border: 0;
+      border-radius: 9px;
+      background: transparent;
+      color: #667085;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .tabs button.active { background: #fff; color: #18212f; box-shadow: 0 1px 3px rgba(16, 24, 40, .12); }
+    .card {
+      padding: 24px;
+      border: 1px solid rgba(24, 33, 47, .09);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: 0 16px 48px rgba(37, 47, 68, .08);
+      margin-bottom: 18px;
+    }
+    button.primary {
+      height: 42px;
+      padding: 0 18px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #315efb, #7147e8);
+      color: #fff;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button.secondary {
+      height: 42px;
+      padding: 0 18px;
+      border: 1px solid #d8dee8;
+      border-radius: 10px;
+      background: #fff;
+      color: #344054;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button.danger { height: 34px; padding: 0 12px; border: 1px solid #f5c2c0; border-radius: 9px; background: #fff; color: #d92d20; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button.small { height: 34px; padding: 0 12px; border: 1px solid #d8dee8; border-radius: 9px; background: #fff; color: #344054; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .provider { display: grid; grid-template-columns: 1fr auto; gap: 16px; padding: 18px 0; border-top: 1px solid #eaecf0; }
+    .provider:first-of-type { border-top: 0; padding-top: 0; }
+    .provider h2 { margin: 0 0 6px; font-size: 17px; }
+    .meta { color: #667085; font-size: 13px; line-height: 1.7; word-break: break-all; }
+    .badge { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: middle; }
+    .badge.on { background: #e7f8f0; color: #067647; }
+    .badge.off { background: #f2f4f7; color: #667085; }
+    .callback { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; flex-wrap: wrap; }
+    .callback code { background: #f2f4f7; padding: 4px 8px; border-radius: 6px; word-break: break-all; }
+    label.field { display: block; margin: 16px 0 6px; font-size: 14px; font-weight: 650; }
+    input[type="text"], input[type="url"], input[type="password"], input[type="search"] {
+      width: 100%;
+      height: 44px;
+      padding: 0 12px;
+      border: 1px solid #d8dee8;
+      border-radius: 10px;
+      background: #fff;
+      color: inherit;
+      font: inherit;
+    }
+    .hint { margin: 6px 0 0; color: #98a2b3; font-size: 12px; }
+    .check { display: flex; align-items: center; gap: 10px; margin-top: 4px; font-size: 15px; font-weight: 500; }
+    .check input { width: 18px; height: 18px; }
+    .switch-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 6px 0 18px; border-bottom: 1px solid #eaecf0; }
+    .switch-row h2 { margin: 0 0 6px; font-size: 17px; }
+    #message { min-height: 20px; margin: 12px 0 0; font-size: 14px; color: #d92d20; }
+    #message.ok { color: #067647; }
+    dialog { width: min(100% - 32px, 560px); padding: 0; border: 0; border-radius: 16px; background: #fff; color: inherit; box-shadow: 0 24px 80px rgba(16, 24, 40, .28); }
+    .dialog-body { padding: 26px; max-height: 82vh; overflow: auto; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+    .empty { color: #667085; padding: 18px 0; }
+    .search-row { display: flex; gap: 10px; margin-bottom: 16px; }
+    .search-row input { flex: 1; }
+    .user-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .user-table th, .user-table td { padding: 11px 8px; border-bottom: 1px solid #eaecf0; text-align: left; vertical-align: middle; }
+    .user-table th { color: #667085; font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .03em; }
+    .user-table td.actions { white-space: nowrap; }
+    .user-table td.actions button + button { margin-left: 8px; }
+    .pager { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; color: #667085; font-size: 13px; }
+    @media (prefers-color-scheme: dark) {
+      :root { background: #0e1118; color: #f2f4f7; }
+      body { background: radial-gradient(circle at 16% 10%, rgba(74, 99, 227, .22), transparent 32%), #0e1118; }
+      .card, dialog { background: #151a24; border-color: rgba(255,255,255,.09); }
+      .provider { border-color: #232a36; }
+      .meta, .sub, .empty, .pager { color: #98a2b3; }
+      input[type="text"], input[type="url"], input[type="password"], input[type="search"] { background: #111722; border-color: #353d4c; }
+      button.secondary, button.small { background: #111722; border-color: #353d4c; color: #e4e7ec; }
+      button.danger { background: #111722; border-color: #5c2b28; color: #f97066; }
+      .callback code { background: #111722; }
+      .badge.off { background: #232a36; color: #98a2b3; }
+      .badge.on { background: #123527; color: #6ce9a6; }
+      .tabs { background: #151a24; }
+      .tabs button { color: #98a2b3; }
+      .tabs button.active { background: #232a36; color: #f2f4f7; box-shadow: none; }
+      .switch-row, .user-table th, .user-table td { border-color: #232a36; }
+    }
+  </style>
+</head>
+<body>
+<div class="wrap" id="app"
+     data-account-path="{{.AccountPath}}"
+     data-providers-path="{{.ProvidersPath}}"
+     data-settings-path="{{.SettingsPath}}"
+     data-users-path="{{.UsersPath}}">
+  <header>
+    <div>
+      <h1>系统设置</h1>
+      <p class="sub">第三方登录、注册策略与用户管理，仅系统管理员可见。</p>
+    </div>
+    <a href="{{.AccountPath}}"><button class="secondary" type="button">返回个人中心</button></a>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button class="active" type="button" data-tab="providers" role="tab">第三方登录</button>
+    <button type="button" data-tab="registration" role="tab">注册与安全</button>
+    <button type="button" data-tab="users" role="tab">用户管理</button>
+  </div>
+
+  <section class="card" data-panel="providers">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px;">
+      <p class="sub" style="margin:0;">用户可以用这里的 provider 一键登录。新增后把回调地址填到对方后台。</p>
+      <button id="create" class="primary" type="button">新增登录方式</button>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section class="card" data-panel="registration" hidden>
+    <div class="switch-row">
+      <div>
+        <h2>允许自动注册</h2>
+        <p class="sub" style="margin:0;">开启后，未注册的邮箱或手机号用验证码登录时会自动建号。关闭则只允许已存在的账号登录。</p>
+      </div>
+      <div class="check"><input id="registration-open" type="checkbox"></div>
+    </div>
+    <div class="row" style="margin-top:18px;">
+      <button id="save-settings" class="primary" type="button">保存设置</button>
+    </div>
+  </section>
+
+  <section class="card" data-panel="users" hidden>
+    <div class="search-row">
+      <input id="user-query" type="search" placeholder="搜索邮箱、手机号或昵称" autocomplete="off">
+      <button id="user-search" class="secondary" type="button">搜索</button>
+    </div>
+    <table class="user-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>账号</th>
+          <th>昵称</th>
+          <th>分组</th>
+          <th>状态</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="user-list"></tbody>
+    </table>
+    <p id="user-empty" class="empty" hidden>没有匹配的用户。</p>
+    <div class="pager">
+      <span id="user-total"></span>
+      <span class="row">
+        <button id="user-prev" class="small" type="button">上一页</button>
+        <button id="user-next" class="small" type="button">下一页</button>
+      </span>
+    </div>
+  </section>
+
+  <p id="message" role="alert" aria-live="polite"></p>
+</div>
+
+<dialog id="editor" aria-labelledby="editor-title">
+  <form class="dialog-body" id="editor-form" method="dialog">
+    <h1 id="editor-title" style="margin:0;font-size:20px;">新增登录方式</h1>
+    <p class="sub" id="editor-sub">标识创建后不可修改。</p>
+
+    <label class="field" for="f-name">标识</label>
+    <input id="f-name" type="text" placeholder="google" autocomplete="off" required>
+    <p class="hint">小写字母、数字、下划线、连字符，2-32 位。会出现在回调地址里。</p>
+
+    <label class="field" for="f-label">显示名称</label>
+    <input id="f-label" type="text" placeholder="Google" autocomplete="off" required>
+
+    <label class="field" for="f-issuer">Issuer</label>
+    <input id="f-issuer" type="url" placeholder="https://accounts.google.com" autocomplete="off" required>
+    <p class="hint">第三方 OIDC 的 issuer，必须能访问 {issuer}/.well-known/openid-configuration。</p>
+
+    <label class="field" for="f-client-id">Client ID</label>
+    <input id="f-client-id" type="text" autocomplete="off" required>
+
+    <label class="field" for="f-client-secret">Client Secret</label>
+    <input id="f-client-secret" type="password" autocomplete="new-password">
+    <p class="hint" id="secret-hint">创建时必填；编辑时留空表示不修改。</p>
+
+    <label class="field" for="f-scopes">Scopes</label>
+    <input id="f-scopes" type="text" placeholder="openid email profile" autocomplete="off">
+
+    <div class="check"><input id="f-auto-register" type="checkbox" checked><label for="f-auto-register">首次登录自动建号</label></div>
+    <div class="check"><input id="f-enabled" type="checkbox" checked><label for="f-enabled">启用</label></div>
+
+    <p id="editor-message" role="alert" aria-live="polite"></p>
+    <div class="dialog-actions">
+      <button class="secondary" type="button" id="editor-cancel">取消</button>
+      <button class="primary" type="submit" id="editor-save">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  const app = document.getElementById('app');
+  const messageEl = document.getElementById('message');
+  let editing = null;
+
+  async function request(path, options = {}) {
+    const response = await fetch(path, {
+      credentials: 'same-origin',
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.code !== 0) {
+      throw new Error(payload.message || payload.msg || '操作失败');
+    }
+    return payload.data;
+  }
+
+  function setMessage(text, ok = false) {
+    messageEl.textContent = text;
+    messageEl.classList.toggle('ok', !!text && ok);
+  }
+
+  function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  // --- 标签切换 ---
+  const tabButtons = Array.from(document.querySelectorAll('.tabs button'));
+  const panels = Array.from(document.querySelectorAll('[data-panel]'));
+  function showPanel(name) {
+    tabButtons.forEach(button => button.classList.toggle('active', button.dataset.tab === name));
+    panels.forEach(panel => { panel.hidden = panel.dataset.panel !== name; });
+    if (name === 'users') loadUsers();
+  }
+  tabButtons.forEach(button => button.addEventListener('click', () => showPanel(button.dataset.tab)));
+
+  // --- 第三方登录 ---
+  const listEl = document.getElementById('list');
+  const dialog = document.getElementById('editor');
+  const form = document.getElementById('editor-form');
+  const editorMessage = document.getElementById('editor-message');
+
+  function renderProviders(providers) {
+    if (!providers.length) {
+      listEl.innerHTML = '<p class="empty">还没有配置任何第三方登录方式。</p>';
+      return;
+    }
+    listEl.innerHTML = providers.map(p => `
+      <article class="provider" data-id="${p.id}">
+        <div>
+          <h2>${escapeHTML(p.label)}${p.enabled ? '<span class="badge on">启用</span>' : '<span class="badge off">停用</span>'}</h2>
+          <div class="meta">
+            <div>标识：<strong>${escapeHTML(p.name)}</strong>　Client ID：${escapeHTML(p.client_id)}</div>
+            <div>Issuer：${escapeHTML(p.issuer)}</div>
+            <div>Secret：${p.secret_set ? '已配置' : '未配置'}　自动建号：${p.auto_register ? '开' : '关'}</div>
+            <div class="callback"><span>回调地址</span><code>${escapeHTML(p.callback_url)}</code>
+              <button class="small" type="button" data-copy="${escapeHTML(p.callback_url)}">复制</button>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="small" type="button" data-edit="${p.id}">编辑</button>
+          <button class="danger" type="button" data-delete="${p.id}">删除</button>
+        </div>
+      </article>
+    `).join('');
+  }
+
+  async function loadProviders() {
+    try {
+      const providers = await request(app.dataset.providersPath, { method: 'GET' });
+      renderProviders(providers || []);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  function openEditor(provider) {
+    editing = provider || null;
+    document.getElementById('editor-title').textContent = provider ? '编辑登录方式' : '新增登录方式';
+    document.getElementById('editor-sub').textContent = provider ? '标识不可修改；密钥留空表示保持原值。' : '标识创建后不可修改。';
+    document.getElementById('secret-hint').textContent = provider ? '留空表示不修改现有密钥。' : '创建时必填。';
+
+    form.elements['f-name'].value = provider?.name || '';
+    form.elements['f-name'].disabled = !!provider;
+    form.elements['f-label'].value = provider?.label || '';
+    form.elements['f-issuer'].value = provider?.issuer || '';
+    form.elements['f-client-id'].value = provider?.client_id || '';
+    form.elements['f-client-secret'].value = '';
+    form.elements['f-scopes'].value = provider?.scopes || 'openid email profile';
+    form.elements['f-auto-register'].checked = provider ? !!provider.auto_register : true;
+    form.elements['f-enabled'].checked = provider ? !!provider.enabled : true;
+    editorMessage.textContent = '';
+    dialog.showModal();
+  }
+
+  document.getElementById('create').addEventListener('click', () => openEditor(null));
+  document.getElementById('editor-cancel').addEventListener('click', () => dialog.close());
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const saveButton = document.getElementById('editor-save');
+    saveButton.disabled = true;
+    editorMessage.textContent = '';
+
+    const body = {
+      label: form.elements['f-label'].value.trim(),
+      issuer: form.elements['f-issuer'].value.trim(),
+      client_id: form.elements['f-client-id'].value.trim(),
+      scopes: form.elements['f-scopes'].value.trim(),
+      auto_register: form.elements['f-auto-register'].checked,
+      enabled: form.elements['f-enabled'].checked
+    };
+    const secret = form.elements['f-client-secret'].value.trim();
+    if (secret) body.client_secret = secret;
+    if (!editing) body.name = form.elements['f-name'].value.trim();
+
+    try {
+      if (editing) {
+        await request(`${app.dataset.providersPath}/${editing.id}`, { method: 'PUT', body: JSON.stringify(body) });
+      } else {
+        await request(app.dataset.providersPath, { method: 'POST', body: JSON.stringify(body) });
+      }
+      dialog.close();
+      setMessage('已保存', true);
+      await loadProviders();
+    } catch (error) {
+      editorMessage.textContent = error.message;
+    } finally {
+      saveButton.disabled = false;
+    }
+  });
+
+  listEl.addEventListener('click', async (event) => {
+    const editId = event.target.dataset.edit;
+    const deleteId = event.target.dataset.delete;
+    const copyText = event.target.dataset.copy;
+
+    if (copyText) {
+      try {
+        await navigator.clipboard.writeText(copyText);
+        setMessage('回调地址已复制', true);
+      } catch {
+        setMessage('复制失败，请手动选择');
+      }
+      return;
+    }
+    if (editId) {
+      try {
+        const providers = await request(app.dataset.providersPath, { method: 'GET' });
+        const provider = (providers || []).find(item => String(item.id) === editId);
+        if (provider) openEditor(provider);
+      } catch (error) {
+        setMessage(error.message);
+      }
+      return;
+    }
+    if (deleteId) {
+      if (!window.confirm('确定删除这个登录方式？已绑定的用户会失去该入口。')) return;
+      try {
+        await request(`${app.dataset.providersPath}/${deleteId}`, { method: 'DELETE' });
+        setMessage('已删除', true);
+        await loadProviders();
+      } catch (error) {
+        setMessage(error.message);
+      }
+    }
+  });
+
+  // --- 注册开关 ---
+  const registrationOpen = document.getElementById('registration-open');
+  async function loadSettings() {
+    try {
+      const settings = await request(app.dataset.settingsPath, { method: 'GET' });
+      registrationOpen.checked = !!settings.registration_open;
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+  document.getElementById('save-settings').addEventListener('click', async () => {
+    try {
+      await request(app.dataset.settingsPath, {
+        method: 'PUT',
+        body: JSON.stringify({ registration_open: registrationOpen.checked })
+      });
+      setMessage('设置已保存', true);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  });
+
+  // --- 用户管理 ---
+  const userListEl = document.getElementById('user-list');
+  const userEmpty = document.getElementById('user-empty');
+  const userTotal = document.getElementById('user-total');
+  const userQuery = document.getElementById('user-query');
+  const pageSize = 50;
+  let userOffset = 0;
+
+  function renderUsers(users) {
+    userEmpty.hidden = users.length > 0;
+    userListEl.innerHTML = users.map(user => {
+      const account = user.email || user.phone || `#${user.id}`;
+      const isAdmin = String(user.group || '').toLowerCase() === 'admin';
+      return `
+        <tr>
+          <td>${user.id}</td>
+          <td>${escapeHTML(account)}${user.email && user.phone ? `<div class="meta">${escapeHTML(user.phone)}</div>` : ''}</td>
+          <td>${escapeHTML(user.nickname || '-')}</td>
+          <td>${isAdmin ? '<span class="badge on">管理员</span>' : '<span class="badge off">普通用户</span>'}</td>
+          <td>${user.enabled ? '启用' : '<span style="color:#d92d20">禁用</span>'}</td>
+          <td class="actions">
+            <button class="small" type="button" data-toggle-enabled="${user.id}" data-enabled="${user.enabled}">${user.enabled ? '禁用' : '启用'}</button>
+            <button class="small" type="button" data-toggle-group="${user.id}" data-group="${isAdmin ? 'DEFAULT' : 'ADMIN'}">${isAdmin ? '取消管理员' : '设为管理员'}</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function loadUsers() {
+    try {
+      const params = new URLSearchParams({ limit: String(pageSize), offset: String(userOffset), q: userQuery.value.trim() });
+      const result = await request(`${app.dataset.usersPath}?${params}`, { method: 'GET' });
+      renderUsers(result.items || []);
+      userTotal.textContent = `共 ${result.total || 0} 个用户`;
+      document.getElementById('user-prev').disabled = userOffset <= 0;
+      document.getElementById('user-next').disabled = userOffset + pageSize >= (result.total || 0);
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  document.getElementById('user-search').addEventListener('click', () => { userOffset = 0; loadUsers(); });
+  userQuery.addEventListener('keydown', event => { if (event.key === 'Enter') { userOffset = 0; loadUsers(); } });
+  document.getElementById('user-prev').addEventListener('click', () => { userOffset = Math.max(0, userOffset - pageSize); loadUsers(); });
+  document.getElementById('user-next').addEventListener('click', () => { userOffset += pageSize; loadUsers(); });
+
+  userListEl.addEventListener('click', async (event) => {
+    const enabledId = event.target.dataset.toggleEnabled;
+    const groupId = event.target.dataset.toggleGroup;
+    try {
+      if (enabledId) {
+        const next = event.target.dataset.enabled !== 'true';
+        await request(`${app.dataset.usersPath}/${enabledId}`, { method: 'PATCH', body: JSON.stringify({ enabled: next }) });
+        setMessage(next ? '已启用' : '已禁用', true);
+        await loadUsers();
+      }
+      if (groupId) {
+        const nextGroup = event.target.dataset.group;
+        await request(`${app.dataset.usersPath}/${groupId}`, { method: 'PATCH', body: JSON.stringify({ group: nextGroup }) });
+        setMessage('已更新分组', true);
+        await loadUsers();
+      }
+    } catch (error) {
+      setMessage(error.message);
+    }
+  });
+
+  loadProviders();
+  loadSettings();
+</script>
+</body>
+</html>

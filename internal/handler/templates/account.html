@@ -26,6 +26,7 @@
     }
     main { width: min(100%, 1080px); margin: 0 auto; }
     .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .identity { display: flex; align-items: center; min-width: 0; gap: 14px; }
     .brand {
       width: 46px;
@@ -190,7 +191,10 @@
           <p class="subtitle">管理账号资料与登录安全。</p>
         </div>
       </div>
-      <button id="logout" class="secondary" type="button">退出登录</button>
+      <div class="topbar-actions">
+        <a id="system-settings" class="button-link secondary" href="#" hidden>系统设置</a>
+        <button id="logout" class="secondary" type="button">退出登录</button>
+      </div>
     </header>
 
     <div class="layout">
@@ -262,7 +266,6 @@
             <h2 id="identity-title">第三方账号</h2>
             <p class="subtitle">已绑定的第三方登录方式。解绑后仍可用其他方式登录。</p>
           </div>
-          <a id="manage-providers" class="button-link secondary" href="#" hidden>管理登录方式</a>
         </div>
         <div id="identity-list" class="credential-list" aria-live="polite"></div>
         <p id="identity-empty" class="empty muted" hidden>尚未绑定第三方账号。</p>
@@ -429,12 +432,12 @@
     async function loadProfile() {
       const user = await requestJSON(container.dataset.userInfoPath, { method: 'GET' });
       applyProfile(user);
-      const manageProviders = document.getElementById('manage-providers');
+      const systemSettings = document.getElementById('system-settings');
       const isAdmin = String(user.group || '').toLowerCase() === 'admin';
       if (isAdmin) {
         const base = container.dataset.loginPath.replace(/\/login\/?$/, '');
-        manageProviders.href = `${base}/admin/providers`;
-        manageProviders.hidden = false;
+        systemSettings.href = `${base}/admin/settings`;
+        systemSettings.hidden = false;
       }
     }
 
