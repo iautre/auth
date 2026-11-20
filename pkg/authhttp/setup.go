@@ -64,18 +64,19 @@ func Setup(router *gin.Engine, options SetupOptions) *Module {
 	}
 
 	if options.Pages {
-		module.Group.GET("/login", handler.OIDCLoginPageFor("/oauth2/authorize"))
+		module.Group.GET("/login", handler.OIDCLoginPageFor("/oauth2/authorize", "/admin/settings", "/admin/providers"))
 		module.Group.GET("/account", handler.OAuth2BrowserLogin(loginURL), handler.AccountPage)
 		// 后台分两块：个人设置（/account）与系统设置（/admin/settings）。
 		// 系统设置含第三方登录、注册开关、用户管理，只有管理员能进。
+		// 未登录直接 302 到登录页，登录后回跳；避免浏览器拿到 401。
 		module.Group.GET("/admin/settings",
-			module.CheckLogin,
+			handler.OAuth2BrowserLogin(loginURL),
 			module.CheckAdmin,
 			handler.SettingsPage,
 		)
 		// 旧地址保留跳转，避免已有书签失效。
 		module.Group.GET("/admin/providers",
-			module.CheckLogin,
+			handler.OAuth2BrowserLogin(loginURL),
 			module.CheckAdmin,
 			handler.ProvidersPageRedirect,
 		)
