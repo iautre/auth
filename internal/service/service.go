@@ -840,6 +840,7 @@ func (o *OIDCService) GetUserInfo(ctx context.Context, userID int64) (*dto.OIDCU
 		PhoneNumber:       user.Phone.String,
 		PhoneVerified:     verified,
 		PreferredUsername: user.Nickname.String,
+		Group:             user.Group.String,
 	}, nil
 }
 
@@ -865,6 +866,7 @@ func (o *OIDCService) UserInfoForScope(ctx context.Context, userID int64, scope 
 	if hasScope("profile") {
 		filtered.Name = full.Name
 		filtered.PreferredUsername = full.PreferredUsername
+		filtered.Group = full.Group
 	}
 	if hasScope("email") {
 		filtered.Email = full.Email

@@ -307,6 +307,7 @@ type OIDCUserInfo struct {
 	PhoneVerified     bool         `json:"phone_number_verified,omitempty"`
 	Address           *OIDCAddress `json:"address,omitempty"`
 	UpdatedAt         int64        `json:"updated_at,omitempty"`
+	Group             string       `json:"group,omitempty"`
 }
 
 type OIDCJwksResponse struct {
